@@ -4,6 +4,8 @@
 
 Flutter отвечает только за интерфейс. Все обращения к Proxmox VE, Proxmox Backup Server и будущим iLO/Redfish-интеграциям идут через backend.
 
+Frontend UI contract описан отдельно: [ui-guidelines.md](ui-guidelines.md). Новые экраны должны использовать общую дизайн-систему, GoRouter-навигацию, skeleton/loading states и sortable таблицы.
+
 Причины:
 
 - токены Proxmox нельзя хранить в браузере;

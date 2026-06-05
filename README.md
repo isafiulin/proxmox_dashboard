@@ -52,4 +52,7 @@ tbot/      Существующий код, пока не связан с нов
 
 Текущий backend уже имеет production storage driver для PostgreSQL и dev/test storage driver на JSON.
 
-Подробности: [docs/architecture.md](docs/architecture.md).
+Подробности:
+
+- [docs/architecture.md](docs/architecture.md) - архитектура и доменная модель;
+- [docs/ui-guidelines.md](docs/ui-guidelines.md) - frontend дизайн-система, навигация, skeleton/loading, таблицы и UI definition of done.

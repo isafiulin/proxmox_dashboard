@@ -27,6 +27,7 @@
 - Редактирование текущего профиля. `done: display name`
 - Дизайн-токены frontend. `done: colors/spacing/radii/theme`
 - Адаптивное левое меню. `done`
+- UI guidelines: дизайн-система, навигация, skeleton/loading, sortable tables. `done: docs/ui-guidelines.md`
 
 ## Этап 2: Proxmox VE read-only
 
