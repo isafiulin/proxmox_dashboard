@@ -76,6 +76,35 @@ class SourceDataRepository {
     return <String, Object?>{};
   }
 
+  Future<Map<String, Object?>> loadNodeVersion({
+    required String sourceId,
+    required String node,
+  }) {
+    return _mapOptional(
+      '/proxmox-ve/$sourceId/nodes/${Uri.encodeComponent(node)}/version',
+    );
+  }
+
+  Future<List<Map<String, Object?>>> loadNodeNetwork({
+    required String sourceId,
+    required String node,
+  }) {
+    return _listOptional(
+      '/proxmox-ve/$sourceId/nodes/${Uri.encodeComponent(node)}/network',
+    );
+  }
+
+  Future<List<Map<String, Object?>>> loadGuestInterfaces({
+    required String sourceId,
+    required String node,
+    required String guestType,
+    required String vmid,
+  }) {
+    return _guestInterfacesOptional(
+      '/proxmox-ve/$sourceId/nodes/${Uri.encodeComponent(node)}/$guestType/$vmid/interfaces',
+    );
+  }
+
   Future<ProxmoxBackupData> loadProxmoxBackup(String sourceId) async {
     final List<Map<String, Object?>> datastores = await _list(
       '/proxmox-backup/$sourceId/datastores',
@@ -137,6 +166,38 @@ class SourceDataRepository {
   Future<List<Map<String, Object?>>> _listOptional(String path) async {
     try {
       return await _list(path);
+    } catch (_) {
+      return <Map<String, Object?>>[];
+    }
+  }
+
+  Future<Map<String, Object?>> _mapOptional(String path) async {
+    try {
+      final Map<String, Object?> json = await _api.get(path);
+      final Object? data = json['data'];
+      if (data is Map) {
+        return data.cast<String, Object?>();
+      }
+    } catch (_) {
+      return <String, Object?>{};
+    }
+    return <String, Object?>{};
+  }
+
+  Future<List<Map<String, Object?>>> _guestInterfacesOptional(
+    String path,
+  ) async {
+    try {
+      final Map<String, Object?> json = await _api.get(path);
+      final Object? data = json['data'];
+      final Object? interfaces = data is Map ? data['result'] : data;
+      if (interfaces is! List) {
+        return <Map<String, Object?>>[];
+      }
+      return interfaces
+          .whereType<Map>()
+          .map((Map<dynamic, dynamic> item) => item.cast<String, Object?>())
+          .toList();
     } catch (_) {
       return <Map<String, Object?>>[];
     }

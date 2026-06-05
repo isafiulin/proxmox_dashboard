@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'core/http/http_helpers.dart';
+import 'core/logging/app_logger.dart';
 import 'core/security/credentials_cipher.dart';
 import 'core/store/app_store.dart';
 import 'features/audit/audit_service.dart';
@@ -26,6 +27,9 @@ class App {
     required this.infrastructure,
     required this.settings,
     required this.collection,
+    required this.logger,
+    required this.storeDriver,
+    required this.startedAt,
   });
 
   final AppStore store;
@@ -37,10 +41,15 @@ class App {
   final InfrastructureReadService infrastructure;
   final SettingsService settings;
   final CollectionService collection;
+  final AppLogger logger;
+  final String storeDriver;
+  final DateTime startedAt;
 
   static Future<App> bootstrap({
     required AppStore store,
+    required String storeDriver,
     required CredentialsCipher credentialsCipher,
+    required AppLogger logger,
   }) async {
     await store.load();
     final audit = AuditService(store.auditEvents);
@@ -49,16 +58,22 @@ class App {
     final bool allowInsecureTls =
         (Platform.environment['ALLOW_INSECURE_TLS'] ?? 'true').toLowerCase() ==
             'true';
-    final proxmoxClient = ProxmoxApiClient(allowInsecureTls: allowInsecureTls);
+    final proxmoxClient = ProxmoxApiClient(
+      allowInsecureTls: allowInsecureTls,
+      logger: logger,
+    );
     final sourcesService = SourcesService(
       store,
       audit,
       credentialsCipher,
       SourceConnectionTester(allowInsecureTls: allowInsecureTls),
     );
-    final infrastructure =
-        InfrastructureReadService(sourcesService, proxmoxClient);
-    final collection = CollectionService(store, infrastructure, audit);
+    final infrastructure = InfrastructureReadService(
+      sourcesService,
+      proxmoxClient,
+      logger,
+    );
+    final collection = CollectionService(store, infrastructure, audit, logger);
     final app = App._(
       store: store,
       audit: audit,
@@ -69,6 +84,9 @@ class App {
       infrastructure: infrastructure,
       settings: SettingsService(store, audit),
       collection: collection,
+      logger: logger,
+      storeDriver: storeDriver,
+      startedAt: DateTime.now().toUtc(),
     );
     await auth.bootstrapAdmin();
     await collection.prune();
@@ -77,17 +95,23 @@ class App {
   }
 
   Future<void> handle(HttpRequest request) async {
+    final stopwatch = Stopwatch()..start();
     applyDefaultHeaders(request);
 
     if (request.method == 'OPTIONS') {
       request.response.statusCode = HttpStatus.noContent;
       await request.response.close();
+      _logRequest(request, stopwatch);
       return;
     }
 
     try {
       await _route(request);
     } on AuthException catch (error) {
+      logger.warning('request.auth_error', <String, Object?>{
+        'code': error.code,
+        'path': request.uri.path,
+      });
       await sendJson(request, {'error': error.code},
           statusCode: HttpStatus.unauthorized);
     } on UserInputException catch (error) {
@@ -103,14 +127,36 @@ class App {
       await sendJson(request, {'error': error.code},
           statusCode: _statusForInputError(error.code));
     } on ProxmoxApiException catch (error) {
+      logger.warning('integration.proxmox_api_error', <String, Object?>{
+        'message': error.message,
+        'path': request.uri.path,
+      });
       await sendJson(request, {'error': error.message},
           statusCode: HttpStatus.badGateway);
     } catch (error, stackTrace) {
-      stderr.writeln(error);
-      stderr.writeln(stackTrace);
+      logger.error(
+        'request.internal_error',
+        <String, Object?>{'path': request.uri.path},
+        error: error,
+        stackTrace: stackTrace,
+      );
       await sendJson(request, {'error': 'internal_error'},
           statusCode: HttpStatus.internalServerError);
+    } finally {
+      _logRequest(request, stopwatch);
     }
+  }
+
+  void _logRequest(HttpRequest request, Stopwatch stopwatch) {
+    stopwatch.stop();
+    logger.info('http.request', <String, Object?>{
+      'method': request.method,
+      'path': request.uri.path,
+      'query': request.uri.query,
+      'statusCode': request.response.statusCode,
+      'durationMs': stopwatch.elapsedMilliseconds,
+      'remoteAddress': request.connectionInfo?.remoteAddress.address,
+    });
   }
 
   Future<void> _route(HttpRequest request) async {
@@ -118,11 +164,25 @@ class App {
     final method = request.method;
 
     if (method == 'GET' && path == '/api/health') {
+      final now = DateTime.now().toUtc();
+      final latestSnapshot = store.dataSnapshots.isEmpty
+          ? null
+          : (List.of(store.dataSnapshots)
+                ..sort((a, b) => b.collectedAt.compareTo(a.collectedAt)))
+              .first;
       return sendJson(request, {
         'status': 'ok',
         'service': 'neotelecom-backend',
         'version': '0.1.0',
-        'time': DateTime.now().toUtc().toIso8601String(),
+        'time': now.toIso8601String(),
+        'startedAt': startedAt.toIso8601String(),
+        'uptimeSeconds': now.difference(startedAt).inSeconds,
+        'storeDriver': storeDriver,
+        'sources': store.sources.length,
+        'users': store.users.length,
+        'snapshots': store.dataSnapshots.length,
+        'latestSnapshotAt': latestSnapshot?.collectedAt.toIso8601String(),
+        'collectionIntervalMinutes': settings.current.collectionIntervalMinutes,
       });
     }
 
@@ -325,6 +385,21 @@ class App {
       return sendJson(request, {'data': data});
     }
 
+    final veNodeInfoRoute = RegExp(
+      r'^/api/proxmox-ve/([^/]+)/nodes/([^/]+)/(version|network)$',
+    ).firstMatch(path);
+    if (veNodeInfoRoute != null && method == 'GET') {
+      final String sourceId = veNodeInfoRoute.group(1)!;
+      final String node = Uri.decodeComponent(veNodeInfoRoute.group(2)!);
+      final String dataType = veNodeInfoRoute.group(3)!;
+      final Object? data = switch (dataType) {
+        'version' => await infrastructure.proxmoxVeNodeVersion(sourceId, node),
+        'network' => await infrastructure.proxmoxVeNodeNetwork(sourceId, node),
+        _ => null,
+      };
+      return sendJson(request, {'data': data});
+    }
+
     final veGuestRoute = RegExp(
       r'^/api/proxmox-ve/([^/]+)/nodes/([^/]+)/(qemu|lxc)/([^/]+)/status/current$',
     ).firstMatch(path);
@@ -335,6 +410,22 @@ class App {
           Uri.decodeComponent(veGuestRoute.group(2)!),
           veGuestRoute.group(3)!,
           veGuestRoute.group(4)!,
+        ),
+      });
+    }
+
+    final veGuestInterfacesRoute = RegExp(
+      r'^/api/proxmox-ve/([^/]+)/nodes/([^/]+)/(qemu|lxc)/([^/]+)/([^/]+)$',
+    ).firstMatch(path);
+    if (veGuestInterfacesRoute != null &&
+        method == 'GET' &&
+        veGuestInterfacesRoute.group(5) == 'interfaces') {
+      return sendJson(request, {
+        'data': await infrastructure.proxmoxVeGuestInterfaces(
+          veGuestInterfacesRoute.group(1)!,
+          Uri.decodeComponent(veGuestInterfacesRoute.group(2)!),
+          veGuestInterfacesRoute.group(3)!,
+          veGuestInterfacesRoute.group(4)!,
         ),
       });
     }

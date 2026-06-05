@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:neotelecom_backend/app.dart';
+import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/core/security/credentials_cipher.dart';
 import 'package:neotelecom_backend/core/store/json_store.dart';
 import 'package:test/test.dart';
@@ -23,6 +24,17 @@ void main() {
 
     expect(response.statusCode, HttpStatus.unauthorized);
     expect(response.json['error'], 'unauthorized');
+  });
+
+  test('health returns observability metadata without auth', () async {
+    final TestResponse response = await harness.request('GET', '/health');
+
+    expect(response.statusCode, HttpStatus.ok);
+    expect(response.json['status'], 'ok');
+    expect(response.json['service'], 'neotelecom-backend');
+    expect(response.json['storeDriver'], 'json');
+    expect(response.json['uptimeSeconds'], isA<int>());
+    expect(response.json['collectionIntervalMinutes'], isA<int>());
   });
 
   test('login returns current admin user', () async {
@@ -161,7 +173,9 @@ class ApiTestHarness {
     final JsonStore store = JsonStore(File('${tempDir.path}/store.json'));
     final App app = await App.bootstrap(
       store: store,
+      storeDriver: 'json',
       credentialsCipher: CredentialsCipher('test-credentials-key'),
+      logger: const AppLogger(enabled: false),
     );
     final HttpServer server =
         await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

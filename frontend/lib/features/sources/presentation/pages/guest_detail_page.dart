@@ -90,6 +90,12 @@ class GuestDetailPage extends StatelessWidget {
       guestType: guestType,
       vmid: vmid,
     );
+    final interfaces = await repository.loadGuestInterfaces(
+      sourceId: sourceId,
+      node: node,
+      guestType: guestType,
+      vmid: vmid,
+    );
     final snapshots = <Map<String, Object?>>[];
     for (final source in sources.where(
       (Source source) => source.type == 'proxmox_backup',
@@ -106,6 +112,7 @@ class GuestDetailPage extends StatelessWidget {
     }
     return _GuestDetailData(
       status: status,
+      interfaces: interfaces,
       backupSummary: analyzeGuestBackups(
         guestType: guestType,
         vmid: vmid,
@@ -139,6 +146,7 @@ class _GuestDetailContent extends StatelessWidget {
     final mem = _ratioPair(status['mem'], status['maxmem']);
     final disk = _ratioPair(status['disk'], status['maxdisk']);
     final backupSummary = data.backupSummary;
+    final ipAddress = _guestIpAddress(data.interfaces);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,6 +188,7 @@ class _GuestDetailContent extends StatelessWidget {
               value: backupStatusLabel(backupSummary.status),
               icon: Icons.backup_outlined,
             ),
+            MetricCard(label: 'IP', value: ipAddress, icon: Icons.lan_outlined),
           ],
         ),
         const SizedBox(height: 16),
@@ -214,6 +223,20 @@ class _GuestDetailContent extends StatelessWidget {
             'maxdisk',
             'netin',
             'netout',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Network interfaces',
+          rows: data.interfaces,
+          preferredColumns: const <String>[
+            'name',
+            'hardware-address',
+            'ip-addresses',
+            'iface',
+            'address',
+            'inet',
+            'inet6',
           ],
         ),
       ],
@@ -304,9 +327,14 @@ class _BackupSummaryCard extends StatelessWidget {
 }
 
 class _GuestDetailData {
-  const _GuestDetailData({required this.status, required this.backupSummary});
+  const _GuestDetailData({
+    required this.status,
+    required this.interfaces,
+    required this.backupSummary,
+  });
 
   final Map<String, Object?> status;
+  final List<Map<String, Object?>> interfaces;
   final GuestBackupSummary backupSummary;
 }
 
@@ -332,6 +360,40 @@ String _localDate(DateTime value) {
   String two(int value) => value.toString().padLeft(2, '0');
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
+}
+
+String _guestIpAddress(List<Map<String, Object?>> interfaces) {
+  final addresses = <String>[];
+  for (final item in interfaces) {
+    final ipAddresses = item['ip-addresses'];
+    if (ipAddresses is List) {
+      for (final ipAddress in ipAddresses.whereType<Map>()) {
+        final address = ipAddress['ip-address']?.toString() ?? '';
+        if (_isUsableIp(address)) {
+          addresses.add(address);
+        }
+      }
+    }
+    for (final key in <String>['address', 'inet', 'inet6']) {
+      final value = item[key]?.toString() ?? '';
+      final address = value.split('/').first;
+      if (_isUsableIp(address)) {
+        addresses.add(address);
+      }
+    }
+  }
+  return addresses.isEmpty ? '-' : addresses.toSet().take(2).join(', ');
+}
+
+bool _isUsableIp(String value) {
+  if (value.isEmpty ||
+      value == '127.0.0.1' ||
+      value == '::1' ||
+      value.startsWith('fe80:') ||
+      value.startsWith('169.254.')) {
+    return false;
+  }
+  return value.contains('.') || value.contains(':');
 }
 
 extension _FirstOrNull<T> on Iterable<T> {

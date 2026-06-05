@@ -91,7 +91,20 @@ class BackupRedundancyPage extends StatelessWidget {
             .map((snapshot) => snapshot['backupSource']?.toString() ?? '')
             .where((sourceName) => sourceName.isNotEmpty)
             .toSet();
-        if (backupSources.length >= 2) {
+        final backupLocations = guestSnapshots
+            .map((snapshot) {
+              final sourceName = snapshot['backupSource']?.toString() ?? '';
+              final datastore = snapshot['datastore']?.toString() ?? '';
+              if (sourceName.isEmpty && datastore.isEmpty) {
+                return '';
+              }
+              return datastore.isEmpty
+                  ? sourceName
+                  : '$sourceName / $datastore';
+            })
+            .where((location) => location.isNotEmpty)
+            .toSet();
+        if (backupLocations.length >= 2) {
           continue;
         }
         final summary = analyzeGuestBackups(
@@ -109,6 +122,7 @@ class BackupRedundancyPage extends StatelessWidget {
             name: guest['name']?.toString() ?? '',
             guestStatus: guest['status']?.toString() ?? 'unknown',
             backupSources: backupSources,
+            backupLocations: backupLocations,
             snapshotCount: guestSnapshots.length,
             latestBackupAt: summary.latestBackupAt,
           ),
@@ -117,8 +131,8 @@ class BackupRedundancyPage extends StatelessWidget {
     }
 
     issues.sort((a, b) {
-      final sourceCompare = a.backupSources.length.compareTo(
-        b.backupSources.length,
+      final sourceCompare = a.backupLocations.length.compareTo(
+        b.backupLocations.length,
       );
       if (sourceCompare != 0) {
         return sourceCompare;
@@ -144,10 +158,10 @@ class _BackupRedundancyContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final missing = report.issues
-        .where((issue) => issue.backupSources.isEmpty)
+        .where((issue) => issue.backupLocations.isEmpty)
         .length;
     final singleServer = report.issues
-        .where((issue) => issue.backupSources.length == 1)
+        .where((issue) => issue.backupLocations.length == 1)
         .length;
 
     return Column(
@@ -155,7 +169,8 @@ class _BackupRedundancyContent extends StatelessWidget {
       children: <Widget>[
         const PageHeader(
           title: 'Backup redundancy',
-          subtitle: 'VM/LXC должны иметь backups минимум на двух разных PBS',
+          subtitle:
+              'VM/LXC должны иметь backups минимум в двух разных местах хранения',
         ),
         const SizedBox(height: 16),
         Wrap(
@@ -173,7 +188,7 @@ class _BackupRedundancyContent extends StatelessWidget {
               icon: Icons.backup_outlined,
             ),
             MetricCard(
-              label: 'Только 1 PBS',
+              label: 'Только 1 location',
               value: singleServer.toString(),
               icon: Icons.warning_amber_outlined,
             ),
@@ -205,7 +220,7 @@ class _BackupRedundancyContent extends StatelessWidget {
                 const EmptyState(
                   icon: Icons.verified_outlined,
                   text:
-                      'Все найденные VM/LXC имеют backups минимум на двух PBS.',
+                      'Все найденные VM/LXC имеют backups минимум в двух местах.',
                 )
               else
                 SingleChildScrollView(
@@ -247,16 +262,16 @@ class _BackupRedundancyContent extends StatelessWidget {
                             compareText(left.guestStatus, right.guestStatus),
                       ),
                       SortableDataColumn<_BackupRedundancyIssue>(
-                        label: 'pbs count',
+                        label: 'location count',
                         numeric: true,
-                        compare: (left, right) => left.backupSources.length
-                            .compareTo(right.backupSources.length),
+                        compare: (left, right) => left.backupLocations.length
+                            .compareTo(right.backupLocations.length),
                       ),
                       SortableDataColumn<_BackupRedundancyIssue>(
-                        label: 'pbs',
+                        label: 'locations',
                         compare: (left, right) => compareText(
-                          left.backupSources.join(', '),
-                          right.backupSources.join(', '),
+                          left.backupLocations.join(', '),
+                          right.backupLocations.join(', '),
                         ),
                       ),
                       SortableDataColumn<_BackupRedundancyIssue>(
@@ -293,8 +308,10 @@ class _BackupRedundancyContent extends StatelessWidget {
                           DataCell(Text('${issue.guestType}/${issue.vmid}')),
                           DataCell(Text(issue.name)),
                           DataCell(StatusChip(status: issue.guestStatus)),
-                          DataCell(Text(issue.backupSources.length.toString())),
-                          DataCell(Text(issue.backupSources.join(', '))),
+                          DataCell(
+                            Text(issue.backupLocations.length.toString()),
+                          ),
+                          DataCell(Text(issue.backupLocations.join(', '))),
                           DataCell(Text(issue.snapshotCount.toString())),
                           DataCell(Text(_formatDateTime(issue.latestBackupAt))),
                         ],
@@ -323,9 +340,10 @@ class _RedundancyInfoCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Безопасное хранение требует минимум 2 разных PBS источника. '
-              'Если backup есть только на одном PBS, потеря этого сервера '
-              'оставит VM/LXC без независимой копии.',
+              'Безопасное хранение требует минимум 2 разных места хранения: '
+              'разные PBS или разные datastore внутри одного PBS. Если backup '
+              'есть только в одном месте, потеря этого хранилища оставит '
+              'VM/LXC без независимой копии.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: AppColors.mutedInk),
@@ -364,6 +382,7 @@ class _BackupRedundancyIssue {
     required this.name,
     required this.guestStatus,
     required this.backupSources,
+    required this.backupLocations,
     required this.snapshotCount,
     required this.latestBackupAt,
   });
@@ -376,10 +395,11 @@ class _BackupRedundancyIssue {
   final String name;
   final String guestStatus;
   final Set<String> backupSources;
+  final Set<String> backupLocations;
   final int snapshotCount;
   final DateTime? latestBackupAt;
 
-  String get status => backupSources.length >= 2 ? 'ok' : 'critical';
+  String get status => backupLocations.length >= 2 ? 'ok' : 'critical';
 }
 
 bool _isGuest(Map<String, Object?> item) {

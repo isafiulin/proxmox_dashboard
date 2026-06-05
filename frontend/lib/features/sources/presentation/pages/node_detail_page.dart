@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
+import 'package:frontend/features/sources/domain/backup_analysis.dart';
 import 'package:frontend/features/sources/domain/source.dart';
 import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
 import 'package:frontend/shared/formatters/value_formatters.dart';
@@ -14,6 +15,7 @@ import 'package:frontend/shared/widgets/page_header.dart';
 import 'package:frontend/shared/widgets/status_chip.dart';
 import 'package:frontend/shared/widgets/usage_bar.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class NodeDetailPage extends StatelessWidget {
   const NodeDetailPage({required this.sourceId, required this.node, super.key});
@@ -36,12 +38,15 @@ class NodeDetailPage extends StatelessWidget {
           );
         }
 
-        return FutureBuilder<ProxmoxVeData>(
-          future: SourceDataRepository(
-            context.read<ApiClient>(),
-          ).loadProxmoxVe(sourceId),
+        return FutureBuilder<_NodeDetailData>(
+          future: _loadNodeDetail(
+            context: context,
+            source: source,
+            sources: sourcesState.items,
+            node: node,
+          ),
           builder:
-              (BuildContext context, AsyncSnapshot<ProxmoxVeData> snapshot) {
+              (BuildContext context, AsyncSnapshot<_NodeDetailData> snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
                   return const LoadingStateView();
                 }
@@ -58,11 +63,77 @@ class NodeDetailPage extends StatelessWidget {
                 return _NodeDetailContent(
                   source: source,
                   node: node,
-                  data: data,
+                  data: data.proxmoxVe,
+                  nodeVersion: data.nodeVersion,
+                  nodeNetwork: data.nodeNetwork,
+                  guestInterfaces: data.guestInterfaces,
+                  backupSnapshots: data.backupSnapshots,
                 );
               },
         );
       },
+    );
+  }
+
+  Future<_NodeDetailData> _loadNodeDetail({
+    required BuildContext context,
+    required Source source,
+    required List<Source> sources,
+    required String node,
+  }) async {
+    final repository = SourceDataRepository(context.read<ApiClient>());
+    final pveData = await repository.loadProxmoxVe(source.id);
+    final nodeVersion = await repository.loadNodeVersion(
+      sourceId: source.id,
+      node: node,
+    );
+    final nodeNetwork = await repository.loadNodeNetwork(
+      sourceId: source.id,
+      node: node,
+    );
+    final backupSnapshots = <Map<String, Object?>>[];
+    for (final pbsSource in sources.where(
+      (Source item) => item.type == 'proxmox_backup',
+    )) {
+      final pbsData = await repository.loadProxmoxBackup(pbsSource.id);
+      backupSnapshots.addAll(
+        pbsData.snapshots.map(
+          (snapshot) => <String, Object?>{
+            'backupSource': pbsSource.name,
+            ...snapshot,
+          },
+        ),
+      );
+    }
+
+    final guests = pveData.vmResources.where((Map<String, Object?> guest) {
+      return guest['node']?.toString() == node &&
+          (guest['type'] == 'qemu' || guest['type'] == 'lxc');
+    });
+    final guestInterfaces = <String, List<Map<String, Object?>>>{};
+    await Future.wait(
+      guests.map((guest) async {
+        final guestType = guest['type']?.toString() ?? '';
+        final vmid = guest['vmid']?.toString() ?? '';
+        if (guestType.isEmpty || vmid.isEmpty) {
+          return;
+        }
+        guestInterfaces['$guestType/$vmid'] = await repository
+            .loadGuestInterfaces(
+              sourceId: source.id,
+              node: node,
+              guestType: guestType,
+              vmid: vmid,
+            );
+      }),
+    );
+
+    return _NodeDetailData(
+      proxmoxVe: pveData,
+      nodeVersion: nodeVersion,
+      nodeNetwork: nodeNetwork,
+      guestInterfaces: guestInterfaces,
+      backupSnapshots: backupSnapshots,
     );
   }
 }
@@ -72,11 +143,19 @@ class _NodeDetailContent extends StatelessWidget {
     required this.source,
     required this.node,
     required this.data,
+    required this.nodeVersion,
+    required this.nodeNetwork,
+    required this.guestInterfaces,
+    required this.backupSnapshots,
   });
 
   final Source source;
   final String node;
   final ProxmoxVeData data;
+  final Map<String, Object?> nodeVersion;
+  final List<Map<String, Object?>> nodeNetwork;
+  final Map<String, List<Map<String, Object?>>> guestInterfaces;
+  final List<Map<String, Object?>> backupSnapshots;
 
   @override
   Widget build(BuildContext context) {
@@ -104,6 +183,9 @@ class _NodeDetailContent extends StatelessWidget {
     final cpu = _ratio(nodeData['cpu']);
     final mem = _ratioPair(nodeData['mem'], nodeData['maxmem']);
     final disk = _ratioPair(nodeData['disk'], nodeData['maxdisk']);
+    final version = _nodeVersionLabel(nodeVersion);
+    final nodeIp = _nodeIpAddress(nodeNetwork);
+    final proxmoxNodeUrl = _proxmoxNodeUrl(source.baseUrl, node);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,7 +198,23 @@ class _NodeDetailContent extends StatelessWidget {
           ),
           title: node,
           subtitle: source.name,
-          trailing: StatusChip(status: nodeData['status']?.toString() ?? 'new'),
+          trailing: Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: proxmoxNodeUrl == null
+                    ? null
+                    : () => launchUrl(
+                        proxmoxNodeUrl,
+                        mode: LaunchMode.externalApplication,
+                      ),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Открыть в Proxmox'),
+              ),
+              StatusChip(status: nodeData['status']?.toString() ?? 'new'),
+            ],
+          ),
         ),
         const SizedBox(height: 20),
         Wrap(
@@ -143,6 +241,16 @@ class _NodeDetailContent extends StatelessWidget {
               value: guests.length.toString(),
               icon: Icons.developer_board_outlined,
             ),
+            MetricCard(
+              label: 'PVE version',
+              value: version,
+              icon: Icons.info_outline,
+            ),
+            MetricCard(
+              label: 'Node IP',
+              value: nodeIp.isEmpty ? '-' : nodeIp,
+              icon: Icons.lan_outlined,
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -161,7 +269,13 @@ class _NodeDetailContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _NodeGuestTable(sourceId: source.id, node: node, guests: guests),
+        _NodeGuestTable(
+          sourceId: source.id,
+          node: node,
+          guests: guests,
+          guestInterfaces: guestInterfaces,
+          backupSnapshots: backupSnapshots,
+        ),
         const SizedBox(height: 16),
         GenericDataSection(
           title: 'Storage ноды',
@@ -199,6 +313,8 @@ class _NodeDetailContent extends StatelessWidget {
             'disk',
             'maxdisk',
             'uptime',
+            'pveversion',
+            'release',
           ],
         ),
       ],
@@ -208,16 +324,36 @@ class _NodeDetailContent extends StatelessWidget {
   bool _sameNode(Map<String, Object?> item) => item['node']?.toString() == node;
 }
 
+class _NodeDetailData {
+  const _NodeDetailData({
+    required this.proxmoxVe,
+    required this.nodeVersion,
+    required this.nodeNetwork,
+    required this.guestInterfaces,
+    required this.backupSnapshots,
+  });
+
+  final ProxmoxVeData proxmoxVe;
+  final Map<String, Object?> nodeVersion;
+  final List<Map<String, Object?>> nodeNetwork;
+  final Map<String, List<Map<String, Object?>>> guestInterfaces;
+  final List<Map<String, Object?>> backupSnapshots;
+}
+
 class _NodeGuestTable extends StatefulWidget {
   const _NodeGuestTable({
     required this.sourceId,
     required this.node,
     required this.guests,
+    required this.guestInterfaces,
+    required this.backupSnapshots,
   });
 
   final String sourceId;
   final String node;
   final List<Map<String, Object?>> guests;
+  final Map<String, List<Map<String, Object?>>> guestInterfaces;
+  final List<Map<String, Object?>> backupSnapshots;
 
   @override
   State<_NodeGuestTable> createState() => _NodeGuestTableState();
@@ -236,9 +372,32 @@ class _NodeGuestTableState extends State<_NodeGuestTable> {
       );
     }
 
-    const columns = <String>['type', 'vmid', 'name', 'status', 'cpu', 'mem'];
+    final enrichedGuests = widget.guests.map((guest) {
+      final guestType = guest['type']?.toString() ?? '';
+      final vmid = guest['vmid']?.toString() ?? '';
+      final backup = analyzeGuestBackups(
+        guestType: guestType,
+        vmid: vmid,
+        snapshots: widget.backupSnapshots,
+      );
+      return <String, Object?>{
+        ...guest,
+        'ip': _guestIpAddress(widget.guestInterfaces['$guestType/$vmid']),
+        'lastBackupAt': backup.latestBackupAt,
+      };
+    }).toList();
+    const columns = <String>[
+      'type',
+      'vmid',
+      'name',
+      'status',
+      'ip',
+      'cpu',
+      'mem',
+      'lastBackupAt',
+    ];
     final sortedGuests = sortTableRows(
-      rows: widget.guests,
+      rows: enrichedGuests,
       column: columns[_sortColumnIndex],
       ascending: _sortAscending,
     );
@@ -292,8 +451,10 @@ class _NodeGuestTableState extends State<_NodeGuestTable> {
                     DataCell(
                       StatusChip(status: guest['status']?.toString() ?? 'new'),
                     ),
+                    DataCell(Text(guest['ip']?.toString() ?? '-')),
                     DataCell(Text(formatPercent(_ratio(guest['cpu'])))),
                     DataCell(Text(_usedOfTotal(guest['mem'], guest['maxmem']))),
+                    DataCell(Text(_formatDateTime(guest['lastBackupAt']))),
                   ],
                 );
               }).toList(),
@@ -351,6 +512,94 @@ String _usedOfTotal(Object? used, Object? total) {
     return '';
   }
   return '$usedText / $totalText';
+}
+
+String _nodeVersionLabel(Map<String, Object?> version) {
+  final pveVersion = version['version']?.toString() ?? '';
+  final release = version['release']?.toString() ?? '';
+  if (pveVersion.isEmpty && release.isEmpty) {
+    return '-';
+  }
+  if (release.isEmpty || pveVersion.contains(release)) {
+    return pveVersion;
+  }
+  return '$pveVersion / $release';
+}
+
+String _nodeIpAddress(List<Map<String, Object?>> network) {
+  final candidates = network.where((item) {
+    final address = item['address']?.toString() ?? '';
+    final active = item['active']?.toString();
+    return _isUsableIp(address) && active != '0';
+  }).toList();
+  candidates.sort((left, right) {
+    final leftIface = left['iface']?.toString() ?? '';
+    final rightIface = right['iface']?.toString() ?? '';
+    final leftScore = leftIface.startsWith('vmbr') ? 0 : 1;
+    final rightScore = rightIface.startsWith('vmbr') ? 0 : 1;
+    return leftScore.compareTo(rightScore);
+  });
+  return candidates.isEmpty ? '' : candidates.first['address'].toString();
+}
+
+String _guestIpAddress(List<Map<String, Object?>>? interfaces) {
+  if (interfaces == null || interfaces.isEmpty) {
+    return '-';
+  }
+  final addresses = <String>[];
+  for (final item in interfaces) {
+    final ipAddresses = item['ip-addresses'];
+    if (ipAddresses is List) {
+      for (final ipAddress in ipAddresses.whereType<Map>()) {
+        final address = ipAddress['ip-address']?.toString() ?? '';
+        if (_isUsableIp(address)) {
+          addresses.add(address);
+        }
+      }
+    }
+    for (final key in <String>['address', 'inet', 'inet6']) {
+      final value = item[key]?.toString() ?? '';
+      final address = value.split('/').first;
+      if (_isUsableIp(address)) {
+        addresses.add(address);
+      }
+    }
+  }
+  return addresses.isEmpty ? '-' : addresses.toSet().take(2).join(', ');
+}
+
+bool _isUsableIp(String value) {
+  if (value.isEmpty ||
+      value == '127.0.0.1' ||
+      value == '::1' ||
+      value.startsWith('fe80:') ||
+      value.startsWith('169.254.')) {
+    return false;
+  }
+  return value.contains('.') || value.contains(':');
+}
+
+Uri? _proxmoxNodeUrl(String baseUrl, String node) {
+  final uri = Uri.tryParse(baseUrl);
+  if (uri == null) {
+    return null;
+  }
+  return uri.replace(fragment: 'v1:0:18:4:::::::${Uri.encodeComponent(node)}');
+}
+
+String _formatDateTime(Object? value) {
+  if (value == null) {
+    return '-';
+  }
+  final date = value is DateTime
+      ? value.toLocal()
+      : DateTime.tryParse('$value');
+  if (date == null) {
+    return '-';
+  }
+  String two(int input) => input.toString().padLeft(2, '0');
+  return '${date.year}-${two(date.month)}-${two(date.day)} '
+      '${two(date.hour)}:${two(date.minute)}';
 }
 
 extension _FirstOrNull<T> on Iterable<T> {

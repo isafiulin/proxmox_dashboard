@@ -12,6 +12,7 @@ import 'package:frontend/features/dashboard/presentation/pages/dashboard_shell.d
 import 'package:frontend/features/dashboard/presentation/pages/node_health_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/overview_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/vm_health_page.dart';
+import 'package:frontend/features/search/presentation/pages/search_page.dart';
 import 'package:frontend/features/sources/presentation/pages/guest_detail_page.dart';
 import 'package:frontend/features/sources/presentation/pages/node_detail_page.dart';
 import 'package:frontend/features/sources/presentation/pages/source_detail_page.dart';
@@ -92,6 +93,11 @@ GoRouter createAppRouter(BuildContext context) {
             path: '/sources',
             pageBuilder: (BuildContext context, GoRouterState state) =>
                 _noTransitionPage(state, const SourcesPage()),
+          ),
+          GoRoute(
+            path: '/search',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const SearchPage()),
           ),
           GoRoute(
             path: '/sources/:sourceId',

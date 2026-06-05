@@ -1,12 +1,14 @@
+import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/integrations/proxmox_api_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 import 'package:neotelecom_backend/features/sources/sources_service.dart';
 
 class InfrastructureReadService {
-  InfrastructureReadService(this._sources, this._client);
+  InfrastructureReadService(this._sources, this._client, this._logger);
 
   final SourcesService _sources;
   final ProxmoxApiClient _client;
+  final AppLogger _logger;
 
   Future<Object?> proxmoxVeNodes(String sourceId) async {
     final Source source = _requireSource(sourceId, 'proxmox_ve');
@@ -56,7 +58,12 @@ class InfrastructureReadService {
             ...status.cast<String, Object?>(),
           });
         }
-      } on ProxmoxApiException {
+      } on ProxmoxApiException catch (error) {
+        _logger.warning('integration.node_status_skipped', <String, Object?>{
+          'sourceId': source.id,
+          'node': node,
+          'error': error.message,
+        });
         // Keep the cluster page usable when a token has partial node access.
       }
     }
@@ -98,7 +105,12 @@ class InfrastructureReadService {
                 ),
           );
         }
-      } on ProxmoxApiException {
+      } on ProxmoxApiException catch (error) {
+        _logger.warning('integration.node_storage_skipped', <String, Object?>{
+          'sourceId': source.id,
+          'node': node,
+          'error': error.message,
+        });
         // Keep the cluster page usable when a token has partial node access.
       }
     }
@@ -109,6 +121,37 @@ class InfrastructureReadService {
     final Source source = _requireSource(sourceId, 'proxmox_ve');
     return _client.getVe(source, await _sources.credentialFor(source.id),
         '/api2/json/cluster/tasks');
+  }
+
+  Future<Object?> proxmoxVeNodeVersion(String sourceId, String node) async {
+    final Source source = _requireSource(sourceId, 'proxmox_ve');
+    return _client.getVe(
+      source,
+      await _sources.credentialFor(source.id),
+      '/api2/json/nodes/${Uri.encodeComponent(node)}/version',
+    );
+  }
+
+  Future<Object?> proxmoxVeNodeNetwork(String sourceId, String node) async {
+    final Source source = _requireSource(sourceId, 'proxmox_ve');
+    return _client.getVe(
+      source,
+      await _sources.credentialFor(source.id),
+      '/api2/json/nodes/${Uri.encodeComponent(node)}/network',
+    );
+  }
+
+  Future<Object?> proxmoxVeGuestInterfaces(
+      String sourceId, String node, String guestType, String vmid) async {
+    final Source source = _requireSource(sourceId, 'proxmox_ve');
+    if (guestType != 'qemu' && guestType != 'lxc') {
+      throw const InfrastructureReadException('invalid_guest_type');
+    }
+    final credential = await _sources.credentialFor(source.id);
+    final path = guestType == 'qemu'
+        ? '/api2/json/nodes/${Uri.encodeComponent(node)}/qemu/$vmid/agent/network-get-interfaces'
+        : '/api2/json/nodes/${Uri.encodeComponent(node)}/lxc/$vmid/interfaces';
+    return _client.getVe(source, credential, path);
   }
 
   Future<List<String>> _nodeNames(Source source, String credential) async {
@@ -136,7 +179,13 @@ class InfrastructureReadService {
         credential,
         '/api2/json/nodes/${Uri.encodeComponent(node)}/$guestType',
       );
-    } on ProxmoxApiException {
+    } on ProxmoxApiException catch (error) {
+      _logger.warning('integration.node_guest_list_skipped', <String, Object?>{
+        'sourceId': source.id,
+        'node': node,
+        'guestType': guestType,
+        'error': error.message,
+      });
       return <Map<String, Object?>>[];
     }
     if (data is! List) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:neotelecom_backend/core/store/app_store.dart';
+import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/audit/audit_service.dart';
 import 'package:neotelecom_backend/features/collection/data_snapshot.dart';
 import 'package:neotelecom_backend/features/integrations/infrastructure_read_service.dart';
@@ -9,11 +10,17 @@ import 'package:neotelecom_backend/features/sources/source.dart';
 const snapshotRetention = Duration(days: 7);
 
 class CollectionService {
-  CollectionService(this._store, this._infrastructure, this._audit);
+  CollectionService(
+    this._store,
+    this._infrastructure,
+    this._audit,
+    this._logger,
+  );
 
   final AppStore _store;
   final InfrastructureReadService _infrastructure;
   final AuditService _audit;
+  final AppLogger _logger;
   Timer? _timer;
 
   void start() {
@@ -51,6 +58,7 @@ class CollectionService {
     required String actorUserId,
     required Source source,
   }) async {
+    final stopwatch = Stopwatch()..start();
     late final DataSnapshot snapshot;
     try {
       snapshot = DataSnapshot.create(
@@ -61,6 +69,11 @@ class CollectionService {
       );
       source.status = 'ok';
       source.lastSeenAt = snapshot.collectedAt;
+      _logger.info('collection.source_ok', <String, Object?>{
+        'sourceId': source.id,
+        'sourceType': source.type,
+        'durationMs': stopwatch.elapsedMilliseconds,
+      });
     } on Object catch (error) {
       snapshot = DataSnapshot.create(
         sourceId: source.id,
@@ -69,6 +82,15 @@ class CollectionService {
         payload: <String, Object?>{'error': error.toString()},
       );
       source.status = 'critical';
+      _logger.error(
+        'collection.source_error',
+        <String, Object?>{
+          'sourceId': source.id,
+          'sourceType': source.type,
+          'durationMs': stopwatch.elapsedMilliseconds,
+        },
+        error: error,
+      );
     }
 
     _store.dataSnapshots.add(snapshot);

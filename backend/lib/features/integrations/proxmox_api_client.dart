@@ -1,13 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/integrations/proxmox_auth_header.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 
 class ProxmoxApiClient {
-  ProxmoxApiClient({required this.allowInsecureTls});
+  ProxmoxApiClient({required this.allowInsecureTls, required this.logger});
 
   final bool allowInsecureTls;
+  final AppLogger logger;
 
   Future<Object?> getVe(Source source, String credential, String path) {
     return _get(source, credential, path);
@@ -28,6 +30,7 @@ class ProxmoxApiClient {
 
     final Uri uri = _uriFor(source.baseUrl, path);
     final HttpClient client = HttpClient();
+    final stopwatch = Stopwatch()..start();
     if (allowInsecureTls) {
       client.badCertificateCallback = (_, __, ___) => true;
     }
@@ -50,12 +53,40 @@ class ProxmoxApiClient {
           : jsonDecode(body) as Map<String, Object?>;
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
+        logger.info('integration.proxmox_request', <String, Object?>{
+          'sourceId': source.id,
+          'sourceType': source.type,
+          'path': path,
+          'statusCode': response.statusCode,
+          'durationMs': stopwatch.elapsedMilliseconds,
+        });
         return json['data'];
       }
 
+      logger.warning('integration.proxmox_request_failed', <String, Object?>{
+        'sourceId': source.id,
+        'sourceType': source.type,
+        'path': path,
+        'statusCode': response.statusCode,
+        'durationMs': stopwatch.elapsedMilliseconds,
+      });
       throw ProxmoxApiException(
         'HTTP ${response.statusCode}: ${json['errors'] ?? json['message'] ?? body}',
       );
+    } on Object catch (error) {
+      if (error is! ProxmoxApiException) {
+        logger.error(
+          'integration.proxmox_request_error',
+          <String, Object?>{
+            'sourceId': source.id,
+            'sourceType': source.type,
+            'path': path,
+            'durationMs': stopwatch.elapsedMilliseconds,
+          },
+          error: error,
+        );
+      }
+      rethrow;
     } finally {
       client.close(force: true);
     }
