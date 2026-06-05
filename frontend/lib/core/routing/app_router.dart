@@ -6,6 +6,7 @@ import 'package:frontend/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:frontend/features/auth/presentation/pages/login_page.dart';
 import 'package:frontend/features/auth/presentation/pages/splash_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/backup_health_page.dart';
+import 'package:frontend/features/dashboard/presentation/pages/backup_missing_vm_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/backup_redundancy_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/backup_schedule_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/dashboard_shell.dart';
@@ -78,6 +79,11 @@ GoRouter createAppRouter(BuildContext context) {
             path: '/backup-redundancy',
             pageBuilder: (BuildContext context, GoRouterState state) =>
                 _noTransitionPage(state, const BackupRedundancyPage()),
+          ),
+          GoRoute(
+            path: '/backup-missing-vm',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const BackupMissingVmPage()),
           ),
           GoRoute(
             path: '/node-health',

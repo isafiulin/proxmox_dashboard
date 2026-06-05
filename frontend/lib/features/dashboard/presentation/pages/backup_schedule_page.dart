@@ -82,6 +82,7 @@ class BackupSchedulePage extends StatelessWidget {
         }
         targets['$backupType/$vmid'] = _ScheduleTarget(
           sourceId: source.id,
+          sourceName: source.name,
           node: guest['node']?.toString() ?? '',
           guestType: guestType,
           vmid: vmid,
@@ -571,16 +572,24 @@ class _DayBackupList extends StatelessWidget {
         else
           ...sortedEntries.map((entry) {
             final target = targets[entry.displayName];
+            final title = target == null || target.name.isEmpty
+                ? entry.displayName
+                : target.name;
+            final location = target == null
+                ? entry.displayName
+                : '${entry.displayName} · ${target.sourceName} / ${target.node}';
             return ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
+              isThreeLine: target != null,
               leading: Icon(
                 entry.planned
                     ? Icons.event_available_outlined
                     : Icons.backup_outlined,
               ),
-              title: Text(entry.displayName),
+              title: Text(title),
               subtitle: Text(
+                '$location\n'
                 '${_formatTime(entry.backupAt)} · '
                 '${entry.planned
                     ? 'planned'
@@ -637,13 +646,34 @@ class _ScheduleTable extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               child: SortableDataTable<BackupScheduleItem>(
                 showCheckboxColumn: false,
-                initialSortColumnIndex: 2,
+                initialSortColumnIndex: 5,
                 items: items,
                 columns: <SortableDataColumn<BackupScheduleItem>>[
                   SortableDataColumn<BackupScheduleItem>(
                     label: 'vm/lxc',
                     compare: (left, right) =>
                         compareText(left.displayName, right.displayName),
+                  ),
+                  SortableDataColumn<BackupScheduleItem>(
+                    label: 'name',
+                    compare: (left, right) => compareText(
+                      targets[left.displayName]?.name ?? '',
+                      targets[right.displayName]?.name ?? '',
+                    ),
+                  ),
+                  SortableDataColumn<BackupScheduleItem>(
+                    label: 'cluster',
+                    compare: (left, right) => compareText(
+                      targets[left.displayName]?.sourceName ?? '',
+                      targets[right.displayName]?.sourceName ?? '',
+                    ),
+                  ),
+                  SortableDataColumn<BackupScheduleItem>(
+                    label: 'node',
+                    compare: (left, right) => compareText(
+                      targets[left.displayName]?.node ?? '',
+                      targets[right.displayName]?.node ?? '',
+                    ),
                   ),
                   SortableDataColumn<BackupScheduleItem>(
                     label: 'events',
@@ -702,6 +732,9 @@ class _ScheduleTable extends StatelessWidget {
                           },
                     cells: <DataCell>[
                       DataCell(Text(item.displayName)),
+                      DataCell(Text(target?.name ?? '-')),
+                      DataCell(Text(target?.sourceName ?? '-')),
+                      DataCell(Text(target?.node ?? '-')),
                       DataCell(Text(item.count.toString())),
                       DataCell(
                         Text(
@@ -748,6 +781,7 @@ class _BackupScheduleData {
 class _ScheduleTarget {
   const _ScheduleTarget({
     required this.sourceId,
+    required this.sourceName,
     required this.node,
     required this.guestType,
     required this.vmid,
@@ -755,6 +789,7 @@ class _ScheduleTarget {
   });
 
   final String sourceId;
+  final String sourceName;
   final String node;
   final String guestType;
   final String vmid;

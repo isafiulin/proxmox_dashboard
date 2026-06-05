@@ -131,9 +131,257 @@ class BackupCalendarEntry {
   String get displayName => '$backupType/$backupId';
 }
 
+class BackupMissingGuestsReport {
+  const BackupMissingGuestsReport({
+    required this.items,
+    required this.totalBackupGroups,
+    required this.deployedGuests,
+  });
+
+  final List<BackupMissingGuestItem> items;
+  final int totalBackupGroups;
+  final int deployedGuests;
+
+  int get missingGroups => items.length;
+}
+
+class BackupMissingGuestItem {
+  const BackupMissingGuestItem({
+    required this.backupType,
+    required this.backupId,
+    required this.snapshotName,
+    required this.backupSources,
+    required this.datastores,
+    required this.count,
+    required this.totalSizeBytes,
+    required this.candidates,
+    this.latestBackupAt,
+  });
+
+  final String backupType;
+  final String backupId;
+  final String snapshotName;
+  final Set<String> backupSources;
+  final Set<String> datastores;
+  final int count;
+  final double totalSizeBytes;
+  final DateTime? latestBackupAt;
+  final List<BackupMissingGuestCandidate> candidates;
+
+  String get displayName => '$backupType/$backupId';
+}
+
+class BackupMissingGuestCandidate {
+  const BackupMissingGuestCandidate({
+    required this.sourceId,
+    required this.sourceName,
+    required this.node,
+    required this.guestType,
+    required this.vmid,
+    required this.name,
+    required this.reason,
+    required this.score,
+  });
+
+  final String sourceId;
+  final String sourceName;
+  final String node;
+  final String guestType;
+  final String vmid;
+  final String name;
+  final String reason;
+  final int score;
+
+  String get displayName => '$guestType/$vmid';
+}
+
 enum BackupAgeStatus { ok, warning, critical, missing }
 
 enum BackupMatchQuality { nameConfirmed, idOnly, nameMismatch }
+
+BackupMissingGuestsReport analyzeMissingBackupGuests({
+  required List<Map<String, Object?>> snapshots,
+  required List<Map<String, Object?>> guests,
+}) {
+  final deployedGuests = guests
+      .where((guest) {
+        return guest['type'] == 'qemu' || guest['type'] == 'lxc';
+      })
+      .map(_BackupGuestIdentity.fromGuest)
+      .toList();
+  final deployedByBackupKey = <String, List<_BackupGuestIdentity>>{};
+  for (final guest in deployedGuests) {
+    deployedByBackupKey.putIfAbsent(
+      guest.backupKey,
+      () => <_BackupGuestIdentity>[],
+    );
+    deployedByBackupKey[guest.backupKey]!.add(guest);
+  }
+
+  final groups = <String, List<Map<String, Object?>>>{};
+  for (final snapshot in snapshots) {
+    final backupType = snapshot['backup-type']?.toString() ?? '';
+    final backupId = snapshot['backup-id']?.toString() ?? '';
+    if (backupType.isEmpty || backupId.isEmpty) {
+      continue;
+    }
+    final name = _normalizeName(_snapshotName(snapshot));
+    final groupKey = name.isEmpty
+        ? '$backupType/$backupId'
+        : '$backupType/$backupId/$name';
+    groups.putIfAbsent(groupKey, () => <Map<String, Object?>>[]);
+    groups[groupKey]!.add(snapshot);
+  }
+
+  final items = <BackupMissingGuestItem>[];
+  for (final group in groups.values) {
+    group.sort(
+      (left, right) => snapshotTime(right).compareTo(snapshotTime(left)),
+    );
+    final latest = group.first;
+    final backupType = latest['backup-type']?.toString() ?? '';
+    final backupId = latest['backup-id']?.toString() ?? '';
+    final snapshotName = _snapshotName(latest);
+    final normalizedSnapshotName = _normalizeName(snapshotName);
+    final backupKey = '$backupType/$backupId';
+    final exactCandidates =
+        deployedByBackupKey[backupKey] ?? const <_BackupGuestIdentity>[];
+    final hasExactMatch = exactCandidates.any((guest) {
+      if (normalizedSnapshotName.isEmpty) {
+        return true;
+      }
+      return guest.normalizedName == normalizedSnapshotName;
+    });
+    if (hasExactMatch) {
+      continue;
+    }
+
+    items.add(
+      BackupMissingGuestItem(
+        backupType: backupType,
+        backupId: backupId,
+        snapshotName: snapshotName,
+        backupSources: group
+            .map((snapshot) => snapshot['backupSource']?.toString() ?? '')
+            .where((value) => value.isNotEmpty)
+            .toSet(),
+        datastores: group
+            .map((snapshot) => snapshot['datastore']?.toString() ?? '')
+            .where((value) => value.isNotEmpty)
+            .toSet(),
+        count: group.length,
+        totalSizeBytes: group.fold<double>(
+          0,
+          (sum, snapshot) => sum + _snapshotSize(snapshot),
+        ),
+        latestBackupAt: snapshotTime(latest),
+        candidates: _missingGuestCandidates(
+          snapshotName: snapshotName,
+          backupKey: backupKey,
+          guests: deployedGuests,
+        ),
+      ),
+    );
+  }
+
+  items.sort((left, right) {
+    final latestCompare = _compareNullableDateTime(
+      right.latestBackupAt,
+      left.latestBackupAt,
+    );
+    if (latestCompare != 0) {
+      return latestCompare;
+    }
+    return left.displayName.compareTo(right.displayName);
+  });
+
+  return BackupMissingGuestsReport(
+    items: items,
+    totalBackupGroups: groups.length,
+    deployedGuests: deployedGuests.length,
+  );
+}
+
+List<BackupMissingGuestCandidate> _missingGuestCandidates({
+  required String snapshotName,
+  required String backupKey,
+  required List<_BackupGuestIdentity> guests,
+}) {
+  final normalizedSnapshotName = _normalizeName(snapshotName);
+  final candidates = <BackupMissingGuestCandidate>[];
+  for (final guest in guests) {
+    var score = 0;
+    var reason = '';
+    if (normalizedSnapshotName.isNotEmpty &&
+        guest.normalizedName.isNotEmpty &&
+        (guest.normalizedName.contains(normalizedSnapshotName) ||
+            normalizedSnapshotName.contains(guest.normalizedName))) {
+      score = 100;
+      reason = 'name match';
+    } else if (guest.backupKey == backupKey) {
+      score = 60;
+      reason = 'same backup id';
+    }
+    if (score == 0) {
+      continue;
+    }
+    candidates.add(
+      BackupMissingGuestCandidate(
+        sourceId: guest.sourceId,
+        sourceName: guest.sourceName,
+        node: guest.node,
+        guestType: guest.guestType,
+        vmid: guest.vmid,
+        name: guest.name,
+        reason: reason,
+        score: score,
+      ),
+    );
+  }
+  candidates.sort((left, right) {
+    final scoreCompare = right.score.compareTo(left.score);
+    if (scoreCompare != 0) {
+      return scoreCompare;
+    }
+    return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+  });
+  return candidates.take(3).toList();
+}
+
+class _BackupGuestIdentity {
+  const _BackupGuestIdentity({
+    required this.sourceId,
+    required this.sourceName,
+    required this.node,
+    required this.guestType,
+    required this.vmid,
+    required this.name,
+  });
+
+  factory _BackupGuestIdentity.fromGuest(Map<String, Object?> guest) {
+    final guestType = guest['type']?.toString() ?? '';
+    final vmid = guest['vmid']?.toString() ?? '';
+    return _BackupGuestIdentity(
+      sourceId: guest['sourceId']?.toString() ?? '',
+      sourceName: guest['source']?.toString() ?? '',
+      node: guest['node']?.toString() ?? '',
+      guestType: guestType,
+      vmid: vmid,
+      name: guest['name']?.toString() ?? '',
+    );
+  }
+
+  final String sourceId;
+  final String sourceName;
+  final String node;
+  final String guestType;
+  final String vmid;
+  final String name;
+
+  String get backupType => guestType == 'lxc' ? 'ct' : 'vm';
+  String get backupKey => '$backupType/$vmid';
+  String get normalizedName => _normalizeName(name);
+}
 
 BackupScheduleReport analyzeBackupSchedule(
   List<Map<String, Object?>> snapshots, {
@@ -511,6 +759,19 @@ String _snapshotName(Map<String, Object?> snapshot) {
 
 String _normalizeName(String value) {
   return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9а-яё]+'), '');
+}
+
+int _compareNullableDateTime(DateTime? left, DateTime? right) {
+  if (left == null && right == null) {
+    return 0;
+  }
+  if (left == null) {
+    return 1;
+  }
+  if (right == null) {
+    return -1;
+  }
+  return left.compareTo(right);
 }
 
 DateTime _startOfDay(DateTime value) {

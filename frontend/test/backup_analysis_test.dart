@@ -199,6 +199,58 @@ void main() {
     expect(vmSchedule.averageInterval, const Duration(days: 1));
     expect(vmSchedule.datastores, <String>{'pbs-main', 'pbs-reserve'});
   });
+
+  test('detects backup groups without deployed VM match', () {
+    final now = DateTime.utc(2026, 6, 5, 3);
+    final report = analyzeMissingBackupGuests(
+      guests: const <Map<String, Object?>>[
+        <String, Object?>{
+          'source': 'cluster-a',
+          'sourceId': 'pve-a',
+          'node': 'node-a',
+          'type': 'qemu',
+          'vmid': '100',
+          'name': 'Middleware',
+        },
+        <String, Object?>{
+          'source': 'cluster-b',
+          'sourceId': 'pve-b',
+          'node': 'node-b',
+          'type': 'qemu',
+          'vmid': '210',
+          'name': 'Windows10forchinanms',
+        },
+      ],
+      snapshots: <Map<String, Object?>>[
+        <String, Object?>{
+          'backupSource': 'PBS-1',
+          'datastore': 'pbs-main',
+          'backup-type': 'vm',
+          'backup-id': '100',
+          'backup-time': now.secondsSinceEpoch,
+          'comment': 'Middleware',
+          'size': 1024,
+        },
+        <String, Object?>{
+          'backupSource': 'PBS-1',
+          'datastore': 'pbs-main',
+          'backup-type': 'vm',
+          'backup-id': '100',
+          'backup-time': now.secondsSinceEpoch,
+          'comment': 'Windows10forchinanms',
+          'size': 2048,
+        },
+      ],
+    );
+
+    expect(report.totalBackupGroups, 2);
+    expect(report.missingGroups, 1);
+    final missing = report.items.single;
+    expect(missing.displayName, 'vm/100');
+    expect(missing.snapshotName, 'Windows10forchinanms');
+    expect(missing.candidates.first.vmid, '210');
+    expect(missing.candidates.first.reason, 'name match');
+  });
 }
 
 extension on DateTime {

@@ -437,6 +437,11 @@ const List<_NavItem> _navItems = <_NavItem>[
     icon: Icons.security_outlined,
   ),
   _NavItem(
+    path: '/backup-missing-vm',
+    label: 'Backup missing VM',
+    icon: Icons.manage_search_outlined,
+  ),
+  _NavItem(
     path: '/node-health',
     label: 'Node health',
     icon: Icons.hub_outlined,
@@ -468,6 +473,7 @@ String _selectedPath(String location) {
     '/backup-health' => '/backup-health',
     '/backup-schedule' => '/backup-schedule',
     '/backup-redundancy' => '/backup-redundancy',
+    '/backup-missing-vm' => '/backup-missing-vm',
     '/node-health' => '/node-health',
     '/vm-health' => '/vm-health',
     '/search' => '/search',
@@ -485,6 +491,7 @@ String _titleForLocation(String location) {
     '/backup-health' => 'Backup health',
     '/backup-schedule' => 'Backup schedule',
     '/backup-redundancy' => 'Backup redundancy',
+    '/backup-missing-vm' => 'Backup missing VM',
     '/node-health' => 'Node health',
     '/vm-health' => 'VM health',
     '/search' => 'Поиск',
