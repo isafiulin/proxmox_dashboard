@@ -1,0 +1,15 @@
+name: neotelecom_backend
+description: Backend API for NeoTelecom infrastructure dashboard.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.4.0
+
+dependencies:
+  crypto: ^3.0.6
+  cryptography: ^2.9.0
+  postgres: ^3.5.11
+
+dev_dependencies:
+  test: ^1.26.3

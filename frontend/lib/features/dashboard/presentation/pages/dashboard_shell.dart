@@ -1,0 +1,492 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:frontend/core/design/app_breakpoints.dart';
+import 'package:frontend/core/design/app_colors.dart';
+import 'package:frontend/core/design/app_spacing.dart';
+import 'package:frontend/features/audit/presentation/cubit/audit_cubit.dart';
+import 'package:frontend/features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:frontend/features/dashboard/presentation/cubit/dashboard_cubit.dart';
+import 'package:frontend/features/settings/presentation/cubit/settings_cubit.dart';
+import 'package:frontend/features/snapshots/presentation/cubit/snapshots_cubit.dart';
+import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
+import 'package:frontend/features/users/presentation/cubit/users_cubit.dart';
+import 'package:frontend/shared/widgets/app_button.dart';
+import 'package:frontend/shared/widgets/app_text_field.dart';
+import 'package:go_router/go_router.dart';
+
+class DashboardShell extends StatelessWidget {
+  const DashboardShell({
+    required this.location,
+    required this.child,
+    super.key,
+  });
+
+  final String location;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashboardFrame(location: location, child: child);
+  }
+}
+
+class _DashboardFrame extends StatefulWidget {
+  const _DashboardFrame({required this.location, required this.child});
+
+  final String location;
+  final Widget child;
+
+  @override
+  State<_DashboardFrame> createState() => _DashboardFrameState();
+}
+
+class _DashboardFrameState extends State<_DashboardFrame> {
+  bool _collapsed = false;
+  Timer? _refreshTimer;
+  int? _currentRefreshMinutes;
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncRefreshTimer(int minutes) {
+    if (_currentRefreshMinutes == minutes) {
+      return;
+    }
+    _currentRefreshMinutes = minutes;
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(Duration(minutes: minutes), (_) {
+      if (!mounted) {
+        return;
+      }
+      _refreshAll(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<SettingsCubit, SettingsState>(
+      listenWhen: (previous, current) =>
+          previous.settings.collectionIntervalMinutes !=
+          current.settings.collectionIntervalMinutes,
+      listener: (BuildContext context, SettingsState state) =>
+          _syncRefreshTimer(state.settings.collectionIntervalMinutes),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool compact = constraints.maxWidth < AppBreakpoints.compact;
+          final bool showExpandedSidebar =
+              !compact && constraints.maxWidth >= AppBreakpoints.wide;
+          final bool collapsed = compact || _collapsed || !showExpandedSidebar;
+          final Widget navigation = _SidebarNavigation(
+            location: widget.location,
+            collapsed: collapsed,
+            onNavigate: (String path) {
+              if (compact) {
+                Navigator.of(context).pop();
+              }
+              context.go(path);
+            },
+            onToggle: compact
+                ? null
+                : () => setState(() => _collapsed = !_collapsed),
+          );
+
+          return Scaffold(
+            drawer: compact ? Drawer(child: navigation) : null,
+            body: Row(
+              children: <Widget>[
+                if (!compact) navigation,
+                Expanded(
+                  child: Column(
+                    children: <Widget>[
+                      _TopBar(
+                        title: _titleForLocation(widget.location),
+                        compact: compact,
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.all(
+                            compact ? AppSpacing.lg : AppSpacing.xl,
+                          ),
+                          child: widget.child,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.title, required this.compact});
+
+  final String title;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final AuthState authState = context.watch<AuthCubit>().state;
+    final SettingsState settingsState = context.watch<SettingsCubit>().state;
+
+    return Container(
+      height: 72,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: <Widget>[
+          if (compact) ...<Widget>[
+            Builder(
+              builder: (BuildContext context) {
+                return IconButton(
+                  tooltip: 'Меню',
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                  icon: const Icon(Icons.menu),
+                );
+              },
+            ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
+          Text(title, style: Theme.of(context).textTheme.headlineSmall),
+          const Spacer(),
+          _RefreshIntervalSelector(
+            minutes: settingsState.settings.collectionIntervalMinutes,
+            onChanged: (int minutes) =>
+                context.read<SettingsCubit>().updateInterval(minutes),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: 'Обновить',
+            onPressed: () => _refreshAll(context),
+            icon: const Icon(Icons.refresh),
+          ),
+          const SizedBox(width: 12),
+          if (!compact)
+            TextButton.icon(
+              onPressed: () => _editProfile(context),
+              icon: const Icon(Icons.account_circle_outlined),
+              label: Text(authState.user?.displayName ?? ''),
+            )
+          else
+            IconButton(
+              tooltip: 'Профиль',
+              onPressed: () => _editProfile(context),
+              icon: const Icon(Icons.account_circle_outlined),
+            ),
+          const SizedBox(width: 12),
+          AppSecondaryButton(
+            label: 'Выйти',
+            icon: Icons.logout,
+            onPressed: () => context.read<AuthCubit>().logout(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _editProfile(BuildContext context) async {
+  final user = context.read<AuthCubit>().state.user;
+  if (user == null) {
+    return;
+  }
+  final controller = TextEditingController(text: user.displayName);
+  final bool? saved = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text('Мой профиль'),
+        content: SizedBox(
+          width: 420,
+          child: AppTextField(
+            controller: controller,
+            label: 'Имя',
+            autofillHints: const <String>[AutofillHints.name],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => context.pop(false),
+            child: const Text('Отмена'),
+          ),
+          AppPrimaryButton(
+            label: 'Сохранить',
+            icon: Icons.save_outlined,
+            onPressed: () => context.pop(true),
+          ),
+        ],
+      );
+    },
+  );
+  if (saved == true && context.mounted) {
+    await context.read<AuthCubit>().updateProfile(
+      displayName: controller.text.trim(),
+    );
+  }
+  controller.dispose();
+}
+
+class _SidebarNavigation extends StatelessWidget {
+  const _SidebarNavigation({
+    required this.location,
+    required this.collapsed,
+    required this.onNavigate,
+    required this.onToggle,
+  });
+
+  final String location;
+  final bool collapsed;
+  final ValueChanged<String> onNavigate;
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = collapsed ? 84.0 : 248.0;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: width,
+      color: AppColors.sidebar,
+      child: SafeArea(
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Row(
+                mainAxisAlignment: collapsed
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.spaceBetween,
+                children: <Widget>[
+                  const Icon(Icons.dns_outlined, color: AppColors.primary),
+                  if (!collapsed)
+                    Text(
+                      'NeoTelecom',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(color: Colors.white),
+                    ),
+                  if (onToggle != null)
+                    IconButton(
+                      tooltip: collapsed ? 'Развернуть меню' : 'Свернуть меню',
+                      color: AppColors.sidebarMuted,
+                      onPressed: onToggle,
+                      icon: Icon(collapsed ? Icons.menu_open : Icons.menu),
+                    ),
+                ],
+              ),
+            ),
+            for (final _NavItem item in _navItems)
+              _SidebarItem(
+                item: item,
+                selected: _selectedPath(location) == item.path,
+                collapsed: collapsed,
+                onTap: () => onNavigate(item.path),
+              ),
+            const Spacer(),
+            _SidebarItem(
+              item: const _NavItem(
+                path: '',
+                label: 'iLO/Redfish',
+                icon: Icons.developer_board_outlined,
+                disabled: true,
+              ),
+              selected: false,
+              collapsed: collapsed,
+              onTap: () {},
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  const _SidebarItem({
+    required this.item,
+    required this.selected,
+    required this.collapsed,
+    required this.onTap,
+  });
+
+  final _NavItem item;
+  final bool selected;
+  final bool collapsed;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = item.disabled
+        ? AppColors.sidebarMuted.withValues(alpha: 0.45)
+        : selected
+        ? Colors.white
+        : AppColors.sidebarMuted;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      child: Tooltip(
+        message: collapsed ? item.label : '',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: item.disabled ? null : onTap,
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: collapsed
+                  ? MainAxisAlignment.center
+                  : MainAxisAlignment.start,
+              children: <Widget>[
+                Icon(item.icon, color: color, size: 21),
+                if (!collapsed) ...<Widget>[
+                  const SizedBox(width: AppSpacing.md),
+                  Text(
+                    item.label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: color,
+                      fontWeight: selected ? FontWeight.w700 : null,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RefreshIntervalSelector extends StatelessWidget {
+  const _RefreshIntervalSelector({
+    required this.minutes,
+    required this.onChanged,
+  });
+
+  final int minutes;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButton<int>(
+      value: <int>[5, 15, 30, 60].contains(minutes) ? minutes : 30,
+      underline: const SizedBox.shrink(),
+      borderRadius: BorderRadius.circular(8),
+      items: const <DropdownMenuItem<int>>[
+        DropdownMenuItem<int>(value: 5, child: Text('5 мин')),
+        DropdownMenuItem<int>(value: 15, child: Text('15 мин')),
+        DropdownMenuItem<int>(value: 30, child: Text('30 мин')),
+        DropdownMenuItem<int>(value: 60, child: Text('1 час')),
+      ],
+      onChanged: (int? value) {
+        if (value != null) {
+          onChanged(value);
+        }
+      },
+    );
+  }
+}
+
+class _NavItem {
+  const _NavItem({
+    required this.path,
+    required this.label,
+    required this.icon,
+    this.disabled = false,
+  });
+
+  final String path;
+  final String label;
+  final IconData icon;
+  final bool disabled;
+}
+
+const List<_NavItem> _navItems = <_NavItem>[
+  _NavItem(path: '/', label: 'Обзор', icon: Icons.dashboard_outlined),
+  _NavItem(
+    path: '/backup-health',
+    label: 'Backup health',
+    icon: Icons.health_and_safety_outlined,
+  ),
+  _NavItem(
+    path: '/backup-schedule',
+    label: 'Backup schedule',
+    icon: Icons.calendar_month_outlined,
+  ),
+  _NavItem(
+    path: '/backup-redundancy',
+    label: 'Backup redundancy',
+    icon: Icons.security_outlined,
+  ),
+  _NavItem(
+    path: '/node-health',
+    label: 'Node health',
+    icon: Icons.hub_outlined,
+  ),
+  _NavItem(
+    path: '/vm-health',
+    label: 'VM health',
+    icon: Icons.developer_board_outlined,
+  ),
+  _NavItem(path: '/sources', label: 'Источники', icon: Icons.storage_outlined),
+  _NavItem(path: '/users', label: 'Пользователи', icon: Icons.people_outline),
+  _NavItem(path: '/audit', label: 'Аудит', icon: Icons.fact_check_outlined),
+];
+
+void _refreshAll(BuildContext context) {
+  context.read<DashboardCubit>().load();
+  context.read<SourcesCubit>().load();
+  context.read<UsersCubit>().load();
+  context.read<AuditCubit>().load();
+  context.read<SnapshotsCubit>().load();
+}
+
+String _selectedPath(String location) {
+  if (location.startsWith('/sources')) {
+    return '/sources';
+  }
+  return switch (location) {
+    '/backup-health' => '/backup-health',
+    '/backup-schedule' => '/backup-schedule',
+    '/backup-redundancy' => '/backup-redundancy',
+    '/node-health' => '/node-health',
+    '/vm-health' => '/vm-health',
+    '/users' => '/users',
+    '/audit' => '/audit',
+    _ => '/',
+  };
+}
+
+String _titleForLocation(String location) {
+  if (location.startsWith('/sources/')) {
+    return 'Источник';
+  }
+  return switch (location) {
+    '/backup-health' => 'Backup health',
+    '/backup-schedule' => 'Backup schedule',
+    '/backup-redundancy' => 'Backup redundancy',
+    '/node-health' => 'Node health',
+    '/vm-health' => 'VM health',
+    '/sources' => 'Источники',
+    '/users' => 'Пользователи',
+    '/audit' => 'Аудит',
+    _ => 'Обзор',
+  };
+}

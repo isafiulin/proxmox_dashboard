@@ -1,0 +1,19 @@
+.DS_Store
+.env
+deploy/.env
+
+# Dart / Flutter
+.dart_tool/
+.dart-home/
+.packages
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
