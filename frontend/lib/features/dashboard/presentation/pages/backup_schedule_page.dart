@@ -14,6 +14,17 @@ import 'package:frontend/shared/widgets/page_header.dart';
 import 'package:frontend/shared/widgets/sortable_data_table.dart';
 import 'package:go_router/go_router.dart';
 
+const double _calendarWeekdayHeaderHeight = 18;
+const double _calendarGridGap = 6;
+const double _calendarGridTopGap = 8;
+const double _calendarDayTileHeight = 52;
+const double _calendarViewportHeight =
+    _calendarWeekdayHeaderHeight +
+    _calendarGridTopGap +
+    (_calendarDayTileHeight * 6) +
+    (_calendarGridGap * 5) +
+    12;
+
 class BackupSchedulePage extends StatelessWidget {
   const BackupSchedulePage({super.key});
 
@@ -153,6 +164,7 @@ class _BackupScheduleContent extends StatelessWidget {
         const SizedBox(height: 16),
         _BackupCalendar(
           entries: data.report.calendarEntries,
+          scheduleItems: data.report.items,
           targets: data.targets,
         ),
         const SizedBox(height: 16),
@@ -190,9 +202,14 @@ class _ScheduleInfoCard extends StatelessWidget {
 }
 
 class _BackupCalendar extends StatefulWidget {
-  const _BackupCalendar({required this.entries, required this.targets});
+  const _BackupCalendar({
+    required this.entries,
+    required this.scheduleItems,
+    required this.targets,
+  });
 
   final List<BackupCalendarEntry> entries;
+  final List<BackupScheduleItem> scheduleItems;
   final Map<String, _ScheduleTarget> targets;
 
   @override
@@ -241,9 +258,13 @@ class _BackupCalendarState extends State<_BackupCalendar> {
 
   @override
   Widget build(BuildContext context) {
-    final entriesByDay = _entriesByDay(widget.entries);
+    final eventsByDay = _eventsByDay(
+      actualEntries: widget.entries,
+      scheduleItems: widget.scheduleItems,
+      visibleMonth: _visibleMonth,
+    );
     final selectedEntries =
-        entriesByDay[_startOfDay(_selectedDay)] ?? <BackupCalendarEntry>[];
+        eventsByDay[_startOfDay(_selectedDay)] ?? <_CalendarEvent>[];
 
     return AppCard(
       child: Column(
@@ -284,14 +305,14 @@ class _BackupCalendarState extends State<_BackupCalendar> {
             ],
           ),
           const SizedBox(height: 12),
-          if (widget.entries.isEmpty)
+          if (widget.entries.isEmpty && widget.scheduleItems.isEmpty)
             const EmptyState(
               icon: Icons.calendar_month_outlined,
               text: 'Backup events пока не найдены.',
             )
           else ...<Widget>[
             SizedBox(
-              height: 370,
+              height: _calendarViewportHeight,
               child: PageView.builder(
                 controller: _controller,
                 onPageChanged: (int page) {
@@ -309,7 +330,11 @@ class _BackupCalendarState extends State<_BackupCalendar> {
                   );
                   return _MonthGrid(
                     month: month,
-                    entriesByDay: entriesByDay,
+                    eventsByDay: _eventsByDay(
+                      actualEntries: widget.entries,
+                      scheduleItems: widget.scheduleItems,
+                      visibleMonth: month,
+                    ),
                     selectedDay: _selectedDay,
                     onSelectDay: (DateTime day) =>
                         setState(() => _selectedDay = day),
@@ -333,20 +358,20 @@ class _BackupCalendarState extends State<_BackupCalendar> {
 class _MonthGrid extends StatelessWidget {
   const _MonthGrid({
     required this.month,
-    required this.entriesByDay,
+    required this.eventsByDay,
     required this.selectedDay,
     required this.onSelectDay,
   });
 
   final DateTime month;
-  final Map<DateTime, List<BackupCalendarEntry>> entriesByDay;
+  final Map<DateTime, List<_CalendarEvent>> eventsByDay;
   final DateTime selectedDay;
   final ValueChanged<DateTime> onSelectDay;
 
   @override
   Widget build(BuildContext context) {
     final days = _calendarMonthDays(month);
-    final maxCount = entriesByDay.entries
+    final maxCount = eventsByDay.entries
         .where(
           (entry) =>
               entry.key.year == month.year && entry.key.month == month.month,
@@ -375,23 +400,25 @@ class _MonthGrid extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              mainAxisExtent: 54,
+              mainAxisSpacing: _calendarGridGap,
+              crossAxisSpacing: _calendarGridGap,
+              mainAxisExtent: _calendarDayTileHeight,
             ),
             itemCount: days.length,
             itemBuilder: (BuildContext context, int index) {
               final day = days[index];
-              final entries =
-                  entriesByDay[_startOfDay(day)] ??
-                  const <BackupCalendarEntry>[];
+              final events =
+                  eventsByDay[_startOfDay(day)] ?? const <_CalendarEvent>[];
               final selected = _isSameDay(day, selectedDay);
               final inMonth = day.month == month.month;
-              final intensity = maxCount == 0 ? 0.0 : entries.length / maxCount;
+              final plannedOnly =
+                  events.isNotEmpty && events.every((event) => event.planned);
+              final intensity = maxCount == 0 ? 0.0 : events.length / maxCount;
               return _CalendarDayTile(
                 day: day,
-                count: entries.length,
+                count: events.length,
                 intensity: intensity,
+                plannedOnly: plannedOnly,
                 selected: selected,
                 inMonth: inMonth,
                 onTap: () => onSelectDay(_startOfDay(day)),
@@ -412,12 +439,15 @@ class _WeekdayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: AppColors.mutedInk,
-          fontWeight: FontWeight.w700,
+      child: SizedBox(
+        height: _calendarWeekdayHeaderHeight,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppColors.mutedInk,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -429,6 +459,7 @@ class _CalendarDayTile extends StatelessWidget {
     required this.day,
     required this.count,
     required this.intensity,
+    required this.plannedOnly,
     required this.selected,
     required this.inMonth,
     required this.onTap,
@@ -437,6 +468,7 @@ class _CalendarDayTile extends StatelessWidget {
   final DateTime day;
   final int count;
   final double intensity;
+  final bool plannedOnly;
   final bool selected;
   final bool inMonth;
   final VoidCallback onTap;
@@ -445,12 +477,17 @@ class _CalendarDayTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final background = count == 0
         ? AppColors.surfaceAlt
-        : Color.lerp(AppColors.surfaceAlt, AppColors.success, intensity)!;
+        : Color.lerp(
+            AppColors.surfaceAlt,
+            plannedOnly ? AppColors.primary : AppColors.success,
+            intensity,
+          )!;
     final foreground = intensity > 0.55 ? Colors.white : AppColors.ink;
     final opacity = inMonth ? 1.0 : 0.35;
 
     return Tooltip(
-      message: '${_formatDate(day)}: $count backup events',
+      message:
+          '${_formatDate(day)}: $count ${plannedOnly ? 'planned ' : ''}backup events',
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
@@ -511,12 +548,12 @@ class _DayBackupList extends StatelessWidget {
   });
 
   final DateTime day;
-  final List<BackupCalendarEntry> entries;
+  final List<_CalendarEvent> entries;
   final Map<String, _ScheduleTarget> targets;
 
   @override
   Widget build(BuildContext context) {
-    final sortedEntries = List<BackupCalendarEntry>.from(entries)
+    final sortedEntries = List<_CalendarEvent>.from(entries)
       ..sort((a, b) => a.backupAt.compareTo(b.backupAt));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -537,11 +574,19 @@ class _DayBackupList extends StatelessWidget {
             return ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.backup_outlined),
+              leading: Icon(
+                entry.planned
+                    ? Icons.event_available_outlined
+                    : Icons.backup_outlined,
+              ),
               title: Text(entry.displayName),
               subtitle: Text(
                 '${_formatTime(entry.backupAt)} · '
-                '${entry.backupSource.isEmpty ? 'PBS' : entry.backupSource}'
+                '${entry.planned
+                    ? 'planned'
+                    : entry.backupSource.isEmpty
+                    ? 'PBS'
+                    : entry.backupSource}'
                 '${entry.datastore.isEmpty ? '' : ' · ${entry.datastore}'}',
               ),
               trailing: target == null ? null : const Icon(Icons.chevron_right),
@@ -716,8 +761,78 @@ class _ScheduleTarget {
   final String name;
 }
 
+class _CalendarEvent {
+  const _CalendarEvent({
+    required this.displayName,
+    required this.backupAt,
+    required this.backupSource,
+    required this.datastore,
+    required this.planned,
+  });
+
+  factory _CalendarEvent.actual(BackupCalendarEntry entry) {
+    return _CalendarEvent(
+      displayName: entry.displayName,
+      backupAt: entry.backupAt,
+      backupSource: entry.backupSource,
+      datastore: entry.datastore,
+      planned: false,
+    );
+  }
+
+  factory _CalendarEvent.planned({
+    required BackupScheduleItem item,
+    required DateTime day,
+  }) {
+    return _CalendarEvent(
+      displayName: item.displayName,
+      backupAt: DateTime(day.year, day.month, day.day, item.typicalHour),
+      backupSource: '',
+      datastore: item.datastores.join(', '),
+      planned: true,
+    );
+  }
+
+  final String displayName;
+  final DateTime backupAt;
+  final String backupSource;
+  final String datastore;
+  final bool planned;
+}
+
 bool _isGuest(Map<String, Object?> item) {
   return item['type'] == 'qemu' || item['type'] == 'lxc';
+}
+
+Map<DateTime, List<_CalendarEvent>> _eventsByDay({
+  required List<BackupCalendarEntry> actualEntries,
+  required List<BackupScheduleItem> scheduleItems,
+  required DateTime visibleMonth,
+}) {
+  final result = <DateTime, List<_CalendarEvent>>{};
+  for (final entry in actualEntries) {
+    final day = _startOfDay(entry.backupAt);
+    result.putIfAbsent(day, () => <_CalendarEvent>[]);
+    result[day]!.add(_CalendarEvent.actual(entry));
+  }
+
+  final today = _startOfDay(DateTime.now());
+  for (final day in _calendarMonthDays(visibleMonth)) {
+    final normalizedDay = _startOfDay(day);
+    if (!normalizedDay.isAfter(today)) {
+      continue;
+    }
+    for (final item in scheduleItems) {
+      if (!item.weekdayCounts.containsKey(normalizedDay.weekday)) {
+        continue;
+      }
+      result.putIfAbsent(normalizedDay, () => <_CalendarEvent>[]);
+      result[normalizedDay]!.add(
+        _CalendarEvent.planned(item: item, day: normalizedDay),
+      );
+    }
+  }
+  return result;
 }
 
 String _formatDateTime(DateTime? value) {
@@ -792,18 +907,6 @@ String _weekdayLabel(int weekday) {
     DateTime.sunday => 'Sun',
     _ => '-',
   };
-}
-
-Map<DateTime, List<BackupCalendarEntry>> _entriesByDay(
-  List<BackupCalendarEntry> entries,
-) {
-  final result = <DateTime, List<BackupCalendarEntry>>{};
-  for (final entry in entries) {
-    final day = _startOfDay(entry.backupAt);
-    result.putIfAbsent(day, () => <BackupCalendarEntry>[]);
-    result[day]!.add(entry);
-  }
-  return result;
 }
 
 List<DateTime> _calendarMonthDays(DateTime month) {

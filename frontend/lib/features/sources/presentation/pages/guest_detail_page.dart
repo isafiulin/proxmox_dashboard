@@ -15,6 +15,7 @@ import 'package:frontend/shared/widgets/page_header.dart';
 import 'package:frontend/shared/widgets/status_chip.dart';
 import 'package:frontend/shared/widgets/usage_bar.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class GuestDetailPage extends StatelessWidget {
   const GuestDetailPage({
@@ -148,6 +149,7 @@ class _GuestDetailContent extends StatelessWidget {
     final disk = _ratioPair(status['disk'], status['maxdisk']);
     final backupSummary = data.backupSummary;
     final ipAddress = _guestIpAddress(data.interfaces);
+    final proxmoxGuestUrl = _proxmoxGuestUrl(source.baseUrl, guestType, vmid);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,7 +164,23 @@ class _GuestDetailContent extends StatelessWidget {
           ),
           title: name.isEmpty ? '$guestType/$vmid' : name,
           subtitle: '${source.name} / $node / $guestType $vmid',
-          trailing: StatusChip(status: status['status']?.toString() ?? 'new'),
+          trailing: Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: proxmoxGuestUrl == null
+                    ? null
+                    : () => launchUrl(
+                        proxmoxGuestUrl,
+                        mode: LaunchMode.externalApplication,
+                      ),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Открыть в Proxmox'),
+              ),
+              StatusChip(status: status['status']?.toString() ?? 'new'),
+            ],
+          ),
         ),
         const SizedBox(height: 20),
         Wrap(
@@ -407,6 +425,16 @@ bool _isUsableIp(String value) {
     return false;
   }
   return value.contains('.') || value.contains(':');
+}
+
+Uri? _proxmoxGuestUrl(String baseUrl, String guestType, String vmid) {
+  final uri = Uri.tryParse(baseUrl);
+  if (uri == null || vmid.isEmpty) {
+    return null;
+  }
+  final proxmoxType = guestType == 'lxc' ? 'lxc' : 'qemu';
+  final resource = Uri.encodeComponent('$proxmoxType/$vmid');
+  return uri.replace(fragment: 'v1:0:=$resource:4:::::::21');
 }
 
 extension _FirstOrNull<T> on Iterable<T> {

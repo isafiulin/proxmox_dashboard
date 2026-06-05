@@ -14,6 +14,7 @@ import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart'
 import 'package:frontend/features/users/presentation/cubit/users_cubit.dart';
 import 'package:frontend/shared/widgets/app_button.dart';
 import 'package:frontend/shared/widgets/app_text_field.dart';
+import 'package:frontend/shared/widgets/scrollable_page_frame.dart';
 import 'package:go_router/go_router.dart';
 
 class DashboardShell extends StatelessWidget {
@@ -108,7 +109,7 @@ class _DashboardFrameState extends State<_DashboardFrame> {
                         compact: compact,
                       ),
                       Expanded(
-                        child: SingleChildScrollView(
+                        child: ScrollablePageFrame(
                           padding: EdgeInsets.all(
                             compact ? AppSpacing.lg : AppSpacing.xl,
                           ),
