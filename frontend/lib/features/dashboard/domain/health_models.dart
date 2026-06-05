@@ -93,6 +93,7 @@ VmHealthReport buildVmHealthReport({
     final backupStatus = analyzeGuestBackups(
       guestType: guest['type']?.toString() ?? '',
       vmid: guest['vmid']?.toString() ?? '',
+      guestName: guest['name']?.toString() ?? '',
       snapshots: snapshots,
     ).status;
     if (backupStatus == BackupAgeStatus.critical ||

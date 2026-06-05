@@ -43,6 +43,66 @@ void main() {
     expect(summary.status, BackupAgeStatus.missing);
   });
 
+  test('confirms backup by PBS notes when VM ids can collide', () {
+    final now = DateTime.utc(2026, 6, 5, 12);
+    final summary = analyzeGuestBackups(
+      guestType: 'qemu',
+      vmid: '100',
+      guestName: 'Middleware',
+      now: now,
+      snapshots: <Map<String, Object?>>[
+        <String, Object?>{
+          'backup-type': 'vm',
+          'backup-id': '100',
+          'backup-time': now
+              .subtract(const Duration(hours: 2))
+              .secondsSinceEpoch,
+          'comment': 'Windows10forchinanms',
+        },
+        <String, Object?>{
+          'backup-type': 'vm',
+          'backup-id': '100',
+          'backup-time': now
+              .subtract(const Duration(hours: 3))
+              .secondsSinceEpoch,
+          'comment': 'Middleware',
+        },
+      ],
+    );
+
+    expect(summary.status, BackupAgeStatus.ok);
+    expect(summary.matchQuality, BackupMatchQuality.nameConfirmed);
+    expect(summary.matches, hasLength(1));
+    expect(summary.matches.first['comment'], 'Middleware');
+  });
+
+  test(
+    'does not accept same vmid backup when PBS notes point to another VM',
+    () {
+      final now = DateTime.utc(2026, 6, 5, 12);
+      final summary = analyzeGuestBackups(
+        guestType: 'qemu',
+        vmid: '100',
+        guestName: 'Middleware',
+        now: now,
+        snapshots: <Map<String, Object?>>[
+          <String, Object?>{
+            'backup-type': 'vm',
+            'backup-id': '100',
+            'backup-time': now
+                .subtract(const Duration(hours: 2))
+                .secondsSinceEpoch,
+            'comment': 'Windows10forchinanms',
+          },
+        ],
+      );
+
+      expect(summary.status, BackupAgeStatus.missing);
+      expect(summary.matchQuality, BackupMatchQuality.nameMismatch);
+      expect(summary.latestBackupAt, isNull);
+    },
+  );
+
   test('builds backup coverage report by guest and day', () {
     final first = DateTime.utc(2026, 6, 4, 1);
     final second = DateTime.utc(2026, 6, 5, 1);

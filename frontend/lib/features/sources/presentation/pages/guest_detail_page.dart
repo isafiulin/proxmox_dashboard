@@ -116,6 +116,7 @@ class GuestDetailPage extends StatelessWidget {
       backupSummary: analyzeGuestBackups(
         guestType: guestType,
         vmid: vmid,
+        guestName: name,
         snapshots: snapshots,
       ),
     );
@@ -298,6 +299,18 @@ class _BackupSummaryCard extends StatelessWidget {
                       backupStatusDescription(summary.status),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppColors.mutedInk,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      backupMatchDescription(summary.matchQuality),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: summary.matchQuality == BackupMatchQuality.idOnly
+                            ? AppColors.warning
+                            : summary.matchQuality ==
+                                  BackupMatchQuality.nameMismatch
+                            ? AppColors.danger
+                            : AppColors.mutedInk,
                       ),
                     ),
                   ],

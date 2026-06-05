@@ -378,6 +378,7 @@ class _NodeGuestTableState extends State<_NodeGuestTable> {
       final backup = analyzeGuestBackups(
         guestType: guestType,
         vmid: vmid,
+        guestName: guest['name']?.toString() ?? '',
         snapshots: widget.backupSnapshots,
       );
       return <String, Object?>{

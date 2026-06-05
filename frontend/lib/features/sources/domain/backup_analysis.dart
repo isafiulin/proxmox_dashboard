@@ -2,12 +2,14 @@ class GuestBackupSummary {
   const GuestBackupSummary({
     required this.matches,
     required this.status,
+    this.matchQuality = BackupMatchQuality.idOnly,
     this.latestBackupAt,
     this.latestSnapshot,
   });
 
   final List<Map<String, Object?>> matches;
   final BackupAgeStatus status;
+  final BackupMatchQuality matchQuality;
   final DateTime? latestBackupAt;
   final Map<String, Object?>? latestSnapshot;
 }
@@ -130,6 +132,8 @@ class BackupCalendarEntry {
 }
 
 enum BackupAgeStatus { ok, warning, critical, missing }
+
+enum BackupMatchQuality { nameConfirmed, idOnly, nameMismatch }
 
 BackupScheduleReport analyzeBackupSchedule(
   List<Map<String, Object?>> snapshots, {
@@ -384,22 +388,48 @@ GuestBackupSummary analyzeGuestBackups({
   required String guestType,
   required String vmid,
   required List<Map<String, Object?>> snapshots,
+  String guestName = '',
   DateTime? now,
 }) {
   final expectedBackupType = guestType == 'lxc' ? 'ct' : 'vm';
-  final matches = snapshots.where((snapshot) {
+  final idMatches = snapshots.where((snapshot) {
     return snapshot['backup-id']?.toString() == vmid &&
         snapshot['backup-type']?.toString() == expectedBackupType;
   }).toList();
+
+  final normalizedGuestName = _normalizeName(guestName);
+  final namedSnapshots = idMatches
+      .where((snapshot) => _snapshotName(snapshot).isNotEmpty)
+      .toList();
+  final nameConfirmedMatches = normalizedGuestName.isEmpty
+      ? <Map<String, Object?>>[]
+      : namedSnapshots.where((snapshot) {
+          final snapshotName = _normalizeName(_snapshotName(snapshot));
+          return snapshotName.contains(normalizedGuestName) ||
+              normalizedGuestName.contains(snapshotName);
+        }).toList();
+  final hasNameMismatch =
+      normalizedGuestName.isNotEmpty &&
+      namedSnapshots.isNotEmpty &&
+      nameConfirmedMatches.isEmpty;
+  final matches = nameConfirmedMatches.isNotEmpty
+      ? nameConfirmedMatches
+      : idMatches;
+  final matchQuality = nameConfirmedMatches.isNotEmpty
+      ? BackupMatchQuality.nameConfirmed
+      : hasNameMismatch
+      ? BackupMatchQuality.nameMismatch
+      : BackupMatchQuality.idOnly;
 
   matches.sort((a, b) {
     return snapshotTime(b).compareTo(snapshotTime(a));
   });
 
-  if (matches.isEmpty) {
-    return const GuestBackupSummary(
+  if (matches.isEmpty || hasNameMismatch) {
+    return GuestBackupSummary(
       matches: <Map<String, Object?>>[],
       status: BackupAgeStatus.missing,
+      matchQuality: matchQuality,
     );
   }
 
@@ -416,6 +446,7 @@ GuestBackupSummary analyzeGuestBackups({
     matches: matches,
     latestBackupAt: latestAt,
     latestSnapshot: latest,
+    matchQuality: matchQuality,
     status: status,
   );
 }
@@ -438,6 +469,17 @@ String backupStatusDescription(BackupAgeStatus status) {
   };
 }
 
+String backupMatchDescription(BackupMatchQuality quality) {
+  return switch (quality) {
+    BackupMatchQuality.nameConfirmed =>
+      'Backup подтвержден по VMID и имени VM/LXC в PBS notes.',
+    BackupMatchQuality.idOnly =>
+      'Backup сопоставлен только по VMID. Если в разных кластерах есть одинаковые VMID, проверьте PBS notes/datastore policy.',
+    BackupMatchQuality.nameMismatch =>
+      'Найден snapshot с таким VMID, но PBS notes указывают другое имя VM/LXC. Backup не засчитан, чтобы не смешать разные кластеры.',
+  };
+}
+
 DateTime snapshotTime(Map<String, Object?> snapshot) {
   final value = snapshot['backup-time'];
   if (value is int) {
@@ -455,6 +497,20 @@ DateTime snapshotTime(Map<String, Object?> snapshot) {
 
 double _snapshotSize(Map<String, Object?> snapshot) {
   return double.tryParse(snapshot['size']?.toString() ?? '') ?? 0;
+}
+
+String _snapshotName(Map<String, Object?> snapshot) {
+  for (final key in <String>['comment', 'notes', 'note']) {
+    final value = snapshot[key]?.toString() ?? '';
+    if (value.trim().isNotEmpty) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+String _normalizeName(String value) {
+  return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9а-яё]+'), '');
 }
 
 DateTime _startOfDay(DateTime value) {

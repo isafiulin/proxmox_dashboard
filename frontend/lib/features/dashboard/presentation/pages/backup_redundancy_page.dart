@@ -110,6 +110,7 @@ class BackupRedundancyPage extends StatelessWidget {
         final summary = analyzeGuestBackups(
           guestType: guestType,
           vmid: vmid,
+          guestName: guest['name']?.toString() ?? '',
           snapshots: snapshots,
         );
         issues.add(

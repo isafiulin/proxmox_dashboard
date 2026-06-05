@@ -308,6 +308,7 @@ BackupAgeStatus _backupStatus(
   return analyzeGuestBackups(
     guestType: guest['type']?.toString() ?? '',
     vmid: guest['vmid']?.toString() ?? '',
+    guestName: guest['name']?.toString() ?? '',
     snapshots: snapshots,
   ).status;
 }
