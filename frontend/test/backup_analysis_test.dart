@@ -96,6 +96,14 @@ void main() {
           'backup-id': '101',
           'backup-time': first.secondsSinceEpoch,
           'datastore': 'pbs-main',
+          'backupSource': 'PBS-1',
+        },
+        <String, Object?>{
+          'backup-type': 'vm',
+          'backup-id': '101',
+          'backup-time': first.secondsSinceEpoch,
+          'datastore': 'pbs-reserve',
+          'backupSource': 'PBS-1',
         },
         <String, Object?>{
           'backup-type': 'vm',
@@ -114,21 +122,22 @@ void main() {
       days: 3,
     );
 
-    expect(report.totalSnapshots, 3);
+    expect(report.totalSnapshots, 4);
     expect(report.calendarDays.map((day) => day.count), <int>[1, 1, 1]);
     expect(report.calendarEntries.map((entry) => entry.displayName), <String>[
       'vm/101',
       'vm/101',
       'ct/202',
     ]);
-    expect(report.calendarEntries.first.datastore, 'pbs-main');
+    expect(report.calendarEntries.first.datastore, 'pbs-main, pbs-reserve');
+    expect(report.calendarEntries.first.backupSource, 'PBS-1');
     final vmSchedule = report.items.singleWhere(
       (item) => item.displayName == 'vm/101',
     );
     expect(vmSchedule.count, 2);
     expect(vmSchedule.typicalHour, first.toLocal().hour);
     expect(vmSchedule.averageInterval, const Duration(days: 1));
-    expect(vmSchedule.datastores, <String>{'pbs-main'});
+    expect(vmSchedule.datastores, <String>{'pbs-main', 'pbs-reserve'});
   });
 }
 

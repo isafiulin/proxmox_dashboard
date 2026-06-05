@@ -144,6 +144,7 @@ BackupScheduleReport analyzeBackupSchedule(
   };
   final entriesByDay = <DateTime, List<BackupCalendarEntry>>{};
   final calendarEntries = <BackupCalendarEntry>[];
+  final calendarEventGroups = <String, _BackupCalendarEventGroup>{};
   final byGuest = <String, List<Map<String, Object?>>>{};
 
   for (final snapshot in snapshots) {
@@ -154,20 +155,20 @@ BackupScheduleReport analyzeBackupSchedule(
     }
 
     final localTime = snapshotTime(snapshot).toLocal();
-    final localDay = _startOfDay(localTime);
-    final entry = BackupCalendarEntry(
-      backupType: backupType,
-      backupId: backupId,
-      backupAt: localTime,
-      datastore: snapshot['datastore']?.toString() ?? '',
-      backupSource: snapshot['backupSource']?.toString() ?? '',
+    final eventKey =
+        '$backupType/$backupId/${localTime.toUtc().millisecondsSinceEpoch}';
+    final eventGroup = calendarEventGroups.putIfAbsent(
+      eventKey,
+      () => _BackupCalendarEventGroup(
+        backupType: backupType,
+        backupId: backupId,
+        backupAt: localTime,
+      ),
     );
-    calendarEntries.add(entry);
-    entriesByDay.putIfAbsent(localDay, () => <BackupCalendarEntry>[]);
-    entriesByDay[localDay]!.add(entry);
-    if (!localDay.isBefore(firstDay) && !localDay.isAfter(currentDay)) {
-      calendarCounts[localDay] = (calendarCounts[localDay] ?? 0) + 1;
-    }
+    eventGroup.add(
+      backupSource: snapshot['backupSource']?.toString() ?? '',
+      datastore: snapshot['datastore']?.toString() ?? '',
+    );
     byGuest.putIfAbsent(
       '$backupType/$backupId',
       () => <Map<String, Object?>>[],
@@ -175,33 +176,49 @@ BackupScheduleReport analyzeBackupSchedule(
     byGuest['$backupType/$backupId']!.add(snapshot);
   }
 
+  for (final eventGroup in calendarEventGroups.values) {
+    final entry = eventGroup.toEntry();
+    final localDay = _startOfDay(entry.backupAt);
+    calendarEntries.add(entry);
+    entriesByDay.putIfAbsent(localDay, () => <BackupCalendarEntry>[]);
+    entriesByDay[localDay]!.add(entry);
+    if (!localDay.isBefore(firstDay) && !localDay.isAfter(currentDay)) {
+      calendarCounts[localDay] = (calendarCounts[localDay] ?? 0) + 1;
+    }
+  }
+
   final items =
       byGuest.entries.map((entry) {
         final snapshots = entry.value
           ..sort((a, b) => snapshotTime(b).compareTo(snapshotTime(a)));
-        final latest = snapshots.isEmpty ? null : snapshotTime(snapshots.first);
-        final first = snapshots.isEmpty ? null : snapshotTime(snapshots.last);
+        final backupEvents = _uniqueSnapshotsByBackupTime(snapshots);
+        final latest = backupEvents.isEmpty
+            ? null
+            : snapshotTime(backupEvents.first);
+        final first = backupEvents.isEmpty
+            ? null
+            : snapshotTime(backupEvents.last);
         final hourCounts = <int, int>{};
         final weekdayCounts = <int, int>{};
-        for (final snapshot in snapshots) {
+        for (final snapshot in backupEvents) {
           final local = snapshotTime(snapshot).toLocal();
           hourCounts[local.hour] = (hourCounts[local.hour] ?? 0) + 1;
           weekdayCounts[local.weekday] =
               (weekdayCounts[local.weekday] ?? 0) + 1;
         }
         final averageInterval =
-            latest == null || first == null || snapshots.length < 2
+            latest == null || first == null || backupEvents.length < 2
             ? null
             : Duration(
                 milliseconds:
                     latest.difference(first).inMilliseconds ~/
-                    (snapshots.length - 1),
+                    (backupEvents.length - 1),
               );
         final parts = entry.key.split('/');
         return BackupScheduleItem(
           backupType: parts.first,
           backupId: parts.length > 1 ? parts[1] : '',
-          count: snapshots.length,
+          count: backupEvents.length,
           typicalHour: _mostCommon(hourCounts),
           weekdayCounts: weekdayCounts,
           datastores: snapshots
@@ -234,6 +251,53 @@ BackupScheduleReport analyzeBackupSchedule(
       ..sort((left, right) => left.backupAt.compareTo(right.backupAt)),
     totalSnapshots: snapshots.length,
   );
+}
+
+List<Map<String, Object?>> _uniqueSnapshotsByBackupTime(
+  List<Map<String, Object?>> snapshots,
+) {
+  final seen = <int>{};
+  final result = <Map<String, Object?>>[];
+  for (final snapshot in snapshots) {
+    final time = snapshotTime(snapshot).toUtc().millisecondsSinceEpoch;
+    if (seen.add(time)) {
+      result.add(snapshot);
+    }
+  }
+  return result;
+}
+
+class _BackupCalendarEventGroup {
+  _BackupCalendarEventGroup({
+    required this.backupType,
+    required this.backupId,
+    required this.backupAt,
+  });
+
+  final String backupType;
+  final String backupId;
+  final DateTime backupAt;
+  final Set<String> backupSources = <String>{};
+  final Set<String> datastores = <String>{};
+
+  void add({required String backupSource, required String datastore}) {
+    if (backupSource.isNotEmpty) {
+      backupSources.add(backupSource);
+    }
+    if (datastore.isNotEmpty) {
+      datastores.add(datastore);
+    }
+  }
+
+  BackupCalendarEntry toEntry() {
+    return BackupCalendarEntry(
+      backupType: backupType,
+      backupId: backupId,
+      backupAt: backupAt,
+      datastore: datastores.join(', '),
+      backupSource: backupSources.join(', '),
+    );
+  }
 }
 
 BackupCoverageReport analyzeBackupCoverage(

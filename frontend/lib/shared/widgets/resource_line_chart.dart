@@ -20,9 +20,19 @@ class ResourceLineChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final latest = points.isEmpty ? null : points.last.value;
+    final min = points.isEmpty
+        ? null
+        : points.map((point) => point.value).reduce((a, b) => a < b ? a : b);
+    final max = points.isEmpty
+        ? null
+        : points.map((point) => point.value).reduce((a, b) => a > b ? a : b);
+    final range = points.length < 2
+        ? ''
+        : '${_formatShortDateTime(points.first.time)} - '
+              '${_formatShortDateTime(points.last.time)}';
     return AppCard(
       child: SizedBox(
-        height: 220,
+        height: 260,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -44,6 +54,13 @@ class ResourceLineChart extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 6),
+            Text(
+              _descriptionForTitle(title),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.mutedInk),
+            ),
             const SizedBox(height: 12),
             if (points.length < 2)
               const Expanded(
@@ -54,14 +71,65 @@ class ResourceLineChart extends StatelessWidget {
               )
             else
               Expanded(
-                child: CustomPaint(
-                  painter: _ResourceLineChartPainter(points),
-                  child: const SizedBox.expand(),
+                child: Column(
+                  children: <Widget>[
+                    Expanded(
+                      child: Row(
+                        children: <Widget>[
+                          const SizedBox(width: 36, child: _YAxisLabels()),
+                          Expanded(
+                            child: CustomPaint(
+                              painter: _ResourceLineChartPainter(points),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: <Widget>[
+                        const SizedBox(width: 36),
+                        Expanded(
+                          child: Text(
+                            range,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.mutedInk),
+                          ),
+                        ),
+                        Text(
+                          'min ${formatPercent(min ?? 0)} · max ${formatPercent(max ?? 0)}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.mutedInk),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _YAxisLabels extends StatelessWidget {
+  const _YAxisLabels();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: AppColors.mutedInk);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: <Widget>[
+        Text('100%', style: style),
+        Text('50%', style: style),
+        Text('0%', style: style),
+      ],
     );
   }
 }
@@ -137,4 +205,24 @@ class _ResourceLineChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _ResourceLineChartPainter oldDelegate) {
     return oldDelegate.points != points;
   }
+}
+
+String _descriptionForTitle(String title) {
+  final lower = title.toLowerCase();
+  if (lower.contains('storage')) {
+    return 'Средняя занятость storage по всем источникам за период.';
+  }
+  if (lower.contains('vm') || lower.contains('lxc')) {
+    return 'Средняя нагрузка всех VM/LXC из собранных snapshots.';
+  }
+  if (lower.contains('нод')) {
+    return 'Средняя нагрузка всех Proxmox нод из собранных snapshots.';
+  }
+  return 'Среднее значение по собранным snapshots.';
+}
+
+String _formatShortDateTime(DateTime value) {
+  final local = value.toLocal();
+  String two(int input) => input.toString().padLeft(2, '0');
+  return '${two(local.day)}.${two(local.month)} ${two(local.hour)}:${two(local.minute)}';
 }

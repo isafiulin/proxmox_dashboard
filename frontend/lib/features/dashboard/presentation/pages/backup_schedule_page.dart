@@ -287,7 +287,7 @@ class _BackupCalendarState extends State<_BackupCalendar> {
           if (widget.entries.isEmpty)
             const EmptyState(
               icon: Icons.calendar_month_outlined,
-              text: 'Snapshots пока не найдены.',
+              text: 'Backup events пока не найдены.',
             )
           else ...<Widget>[
             SizedBox(
@@ -450,7 +450,7 @@ class _CalendarDayTile extends StatelessWidget {
     final opacity = inMonth ? 1.0 : 0.35;
 
     return Tooltip(
-      message: '${_formatDate(day)}: $count snapshots',
+      message: '${_formatDate(day)}: $count backup events',
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
@@ -491,7 +491,7 @@ class _CalendarDayTile extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                'snapshots',
+                'events',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: foreground, fontSize: 11),
               ),
@@ -522,14 +522,14 @@ class _DayBackupList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(
-          '${_formatDate(day)} · ${sortedEntries.length} snapshots',
+          '${_formatDate(day)} · ${sortedEntries.length} backup events',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),
         if (sortedEntries.isEmpty)
           const EmptyState(
             icon: Icons.event_busy_outlined,
-            text: 'В этот день snapshots не найдены.',
+            text: 'В этот день backup events не найдены.',
           )
         else
           ...sortedEntries.map((entry) {
@@ -601,7 +601,7 @@ class _ScheduleTable extends StatelessWidget {
                         compareText(left.displayName, right.displayName),
                   ),
                   SortableDataColumn<BackupScheduleItem>(
-                    label: 'snapshots',
+                    label: 'events',
                     numeric: true,
                     compare: (left, right) => left.count.compareTo(right.count),
                   ),
