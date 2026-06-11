@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
+import 'package:frontend/features/snapshots/domain/resource_history.dart';
+import 'package:frontend/features/snapshots/presentation/cubit/snapshots_cubit.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
 import 'package:frontend/features/sources/domain/backup_analysis.dart';
 import 'package:frontend/features/sources/domain/source.dart';
@@ -12,6 +14,7 @@ import 'package:frontend/shared/widgets/async_state_view.dart';
 import 'package:frontend/shared/widgets/generic_data_section.dart';
 import 'package:frontend/shared/widgets/metric_card.dart';
 import 'package:frontend/shared/widgets/page_header.dart';
+import 'package:frontend/shared/widgets/resource_line_chart.dart';
 import 'package:frontend/shared/widgets/status_chip.dart';
 import 'package:frontend/shared/widgets/usage_bar.dart';
 import 'package:go_router/go_router.dart';
@@ -186,6 +189,11 @@ class _NodeDetailContent extends StatelessWidget {
     final version = _nodeVersionLabel(nodeVersion);
     final nodeIp = _nodeIpAddress(nodeNetwork);
     final proxmoxNodeUrl = _proxmoxNodeUrl(source.baseUrl, node);
+    final history = buildNodeResourceHistory(
+      context.watch<SnapshotsCubit>().state.items,
+      sourceId: source.id,
+      node: node,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,6 +277,8 @@ class _NodeDetailContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        _NodeHistoryCharts(history: history),
+        const SizedBox(height: 16),
         _NodeGuestTable(
           sourceId: source.id,
           node: node,
@@ -338,6 +348,48 @@ class _NodeDetailData {
   final List<Map<String, Object?>> nodeNetwork;
   final Map<String, List<Map<String, Object?>>> guestInterfaces;
   final List<Map<String, Object?>> backupSnapshots;
+}
+
+class _NodeHistoryCharts extends StatelessWidget {
+  const _NodeHistoryCharts({required this.history});
+
+  final NodeResourceHistoryReport history;
+
+  @override
+  Widget build(BuildContext context) {
+    final charts = <Widget>[
+      ResourceLineChart(
+        title: 'Node CPU history',
+        points: history.cpu,
+        icon: Icons.speed_outlined,
+        description: 'История CPU нагрузки выбранной Proxmox ноды.',
+      ),
+      ResourceLineChart(
+        title: 'Node RAM history',
+        points: history.ram,
+        icon: Icons.memory_outlined,
+        description: 'История RAM нагрузки выбранной Proxmox ноды.',
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth > 900) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: charts[0]),
+              const SizedBox(width: 12),
+              Expanded(child: charts[1]),
+            ],
+          );
+        }
+        return Column(
+          children: <Widget>[charts[0], const SizedBox(height: 12), charts[1]],
+        );
+      },
+    );
+  }
 }
 
 class _NodeGuestTable extends StatefulWidget {

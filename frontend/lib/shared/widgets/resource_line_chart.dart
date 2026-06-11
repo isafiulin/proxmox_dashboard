@@ -5,20 +5,30 @@ import 'package:frontend/shared/formatters/value_formatters.dart';
 import 'package:frontend/shared/widgets/app_card.dart';
 import 'package:frontend/shared/widgets/empty_state.dart';
 
-class ResourceLineChart extends StatelessWidget {
+class ResourceLineChart extends StatefulWidget {
   const ResourceLineChart({
     required this.title,
     required this.points,
     required this.icon,
+    this.description,
     super.key,
   });
 
   final String title;
   final List<ResourceHistoryPoint> points;
   final IconData icon;
+  final String? description;
+
+  @override
+  State<ResourceLineChart> createState() => _ResourceLineChartState();
+}
+
+class _ResourceLineChartState extends State<ResourceLineChart> {
+  _ChartRange _range = _ChartRange.week;
 
   @override
   Widget build(BuildContext context) {
+    final points = _filterPoints(widget.points, _range);
     final latest = points.isEmpty ? null : points.last.value;
     final min = points.isEmpty
         ? null
@@ -38,11 +48,11 @@ class ResourceLineChart extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(icon, color: AppColors.primary),
+                Icon(widget.icon, color: AppColors.primary),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    title,
+                    widget.title,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -55,11 +65,23 @@ class ResourceLineChart extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              _descriptionForTitle(title),
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppColors.mutedInk),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    widget.description ?? _descriptionForTitle(widget.title),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: AppColors.mutedInk),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _RangeSelector(
+                  value: _range,
+                  onChanged: (value) => setState(() => _range = value),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             if (points.length < 2)
@@ -112,6 +134,71 @@ class ResourceLineChart extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RangeSelector extends StatelessWidget {
+  const _RangeSelector({required this.value, required this.onChanged});
+
+  final _ChartRange value;
+  final ValueChanged<_ChartRange> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<_ChartRange>(
+      segments: const <ButtonSegment<_ChartRange>>[
+        ButtonSegment<_ChartRange>(
+          value: _ChartRange.today,
+          label: Text('Сегодня'),
+        ),
+        ButtonSegment<_ChartRange>(
+          value: _ChartRange.twoDays,
+          label: Text('2 дня'),
+        ),
+        ButtonSegment<_ChartRange>(
+          value: _ChartRange.week,
+          label: Text('Неделя'),
+        ),
+      ],
+      selected: <_ChartRange>{value},
+      showSelectedIcon: false,
+      style: ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        textStyle: WidgetStatePropertyAll(
+          Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+      onSelectionChanged: (Set<_ChartRange> values) {
+        if (values.isNotEmpty) {
+          onChanged(values.first);
+        }
+      },
+    );
+  }
+}
+
+enum _ChartRange {
+  today(Duration(days: 1)),
+  twoDays(Duration(days: 2)),
+  week(Duration(days: 7));
+
+  const _ChartRange(this.duration);
+
+  final Duration duration;
+}
+
+List<ResourceHistoryPoint> _filterPoints(
+  List<ResourceHistoryPoint> points,
+  _ChartRange range,
+) {
+  if (points.isEmpty) {
+    return points;
+  }
+  final latest = points.last.time;
+  final from = latest.subtract(range.duration);
+  final filtered = points
+      .where((point) => !point.time.isBefore(from))
+      .toList(growable: false);
+  return filtered.isEmpty ? points : filtered;
 }
 
 class _YAxisLabels extends StatelessWidget {

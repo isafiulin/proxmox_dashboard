@@ -22,9 +22,9 @@ class SourceDataRepository {
     final storageResources = results[3];
     final resources = results[4];
     final tasks = results[5];
-    final nodeStatuses = _nodesHaveMetrics(nodes) || nodeResources.isNotEmpty
-        ? <Map<String, Object?>>[]
-        : await _listOptional('/proxmox-ve/$sourceId/node-statuses');
+    final nodeStatuses = await _listOptional(
+      '/proxmox-ve/$sourceId/node-statuses',
+    );
     final nodeGuests = vmResources.isNotEmpty
         ? <Map<String, Object?>>[]
         : await _listOptional('/proxmox-ve/$sourceId/node-guests');
@@ -209,17 +209,6 @@ class SourceRuntimeData {
 
   final ProxmoxVeData? proxmoxVe;
   final ProxmoxBackupData? proxmoxBackup;
-}
-
-bool _nodesHaveMetrics(List<Map<String, Object?>> nodes) {
-  return nodes.any(
-    (node) =>
-        node.containsKey('cpu') ||
-        node.containsKey('mem') ||
-        node.containsKey('maxmem') ||
-        node.containsKey('disk') ||
-        node.containsKey('maxdisk'),
-  );
 }
 
 class ProxmoxVeData {

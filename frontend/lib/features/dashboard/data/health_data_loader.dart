@@ -9,6 +9,7 @@ class HealthRuntimeData {
     required this.nodes,
     required this.guests,
     required this.tasks,
+    required this.storageResources,
     required this.backupSnapshots,
     required this.collectionErrors,
   });
@@ -16,6 +17,7 @@ class HealthRuntimeData {
   final List<Map<String, Object?>> nodes;
   final List<Map<String, Object?>> guests;
   final List<Map<String, Object?>> tasks;
+  final List<Map<String, Object?>> storageResources;
   final List<Map<String, Object?>> backupSnapshots;
   final List<Map<String, Object?>> collectionErrors;
 }
@@ -28,6 +30,7 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
   final nodes = <Map<String, Object?>>[];
   final guests = <Map<String, Object?>>[];
   final tasks = <Map<String, Object?>>[];
+  final storageResources = <Map<String, Object?>>[];
   final snapshots = <Map<String, Object?>>[];
   final errors = <Map<String, Object?>>[];
 
@@ -58,6 +61,15 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
             (task) => <String, Object?>{'source': source.name, ...task},
           ),
         );
+        storageResources.addAll(
+          data.storageResources.map(
+            (storage) => <String, Object?>{
+              'source': source.name,
+              'sourceId': source.id,
+              ...storage,
+            },
+          ),
+        );
       }
       if (source.type == 'proxmox_backup') {
         final data = await repository.loadProxmoxBackup(source.id);
@@ -85,6 +97,7 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
         .where((guest) => guest['type'] == 'qemu' || guest['type'] == 'lxc')
         .toList(),
     tasks: tasks,
+    storageResources: storageResources,
     backupSnapshots: snapshots,
     collectionErrors: errors,
   );

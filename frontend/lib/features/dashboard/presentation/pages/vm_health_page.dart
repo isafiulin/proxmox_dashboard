@@ -47,6 +47,7 @@ class VmHealthPage extends StatelessWidget {
                         nodes: <Map<String, Object?>>[],
                         guests: <Map<String, Object?>>[],
                         tasks: <Map<String, Object?>>[],
+                        storageResources: <Map<String, Object?>>[],
                         backupSnapshots: <Map<String, Object?>>[],
                         collectionErrors: <Map<String, Object?>>[],
                       ),
@@ -120,6 +121,11 @@ class _VmHealthContent extends StatelessWidget {
         const SizedBox(height: 16),
         _VmCharts(history: history),
         const SizedBox(height: 16),
+        _NodeCapacityTable(
+          nodes: data.nodes,
+          storageResources: data.storageResources,
+        ),
+        const SizedBox(height: 16),
         _VmRiskTable(guests: report.guests, snapshots: data.backupSnapshots),
         const SizedBox(height: 16),
         _VmSignalCard(data: data),
@@ -164,6 +170,292 @@ class _VmCharts extends StatelessWidget {
       },
     );
   }
+}
+
+class _NodeCapacityTable extends StatelessWidget {
+  const _NodeCapacityTable({
+    required this.nodes,
+    required this.storageResources,
+  });
+
+  final List<Map<String, Object?>> nodes;
+  final List<Map<String, Object?>> storageResources;
+
+  @override
+  Widget build(BuildContext context) {
+    final storageByNode = <String, List<Map<String, Object?>>>{};
+    for (final storage in storageResources) {
+      final key = _nodeKey(
+        storage['sourceId']?.toString() ?? '',
+        storage['node']?.toString() ?? '',
+      );
+      storageByNode.putIfAbsent(key, () => <Map<String, Object?>>[]);
+      storageByNode[key]!.add(storage);
+    }
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Фактические ресурсы нод',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          if (nodes.isEmpty)
+            const EmptyState(
+              icon: Icons.hub_outlined,
+              text: 'Ноды пока не найдены.',
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SortableDataTable<Map<String, Object?>>(
+                showCheckboxColumn: false,
+                initialSortColumnIndex: 1,
+                items: nodes,
+                columns: <SortableDataColumn<Map<String, Object?>>>[
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'source',
+                    compare: (left, right) => compareText(
+                      left['source']?.toString() ?? '',
+                      right['source']?.toString() ?? '',
+                    ),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'node',
+                    compare: (left, right) => compareText(
+                      left['node']?.toString() ?? '',
+                      right['node']?.toString() ?? '',
+                    ),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'status',
+                    compare: (left, right) => compareText(
+                      left['status']?.toString() ?? 'unknown',
+                      right['status']?.toString() ?? 'unknown',
+                    ),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'cpu model',
+                    compare: (left, right) =>
+                        compareText(_cpuModel(left), _cpuModel(right)),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'cores/threads',
+                    numeric: true,
+                    compare: (left, right) =>
+                        _cpuThreads(left).compareTo(_cpuThreads(right)),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'ram total',
+                    numeric: true,
+                    compare: (left, right) => _number(
+                      left['maxmem'],
+                    ).compareTo(_number(right['maxmem'])),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'ram used',
+                    numeric: true,
+                    compare: (left, right) =>
+                        _number(left['mem']).compareTo(_number(right['mem'])),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'root disk',
+                    numeric: true,
+                    compare: (left, right) => _number(
+                      left['maxdisk'],
+                    ).compareTo(_number(right['maxdisk'])),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'storage',
+                    numeric: true,
+                    compare: (left, right) => _nodeStorage(storageByNode, left)
+                        .length
+                        .compareTo(_nodeStorage(storageByNode, right).length),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'storage types',
+                    compare: (left, right) => compareText(
+                      _storageTypes(_nodeStorage(storageByNode, left)),
+                      _storageTypes(_nodeStorage(storageByNode, right)),
+                    ),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'storage usage',
+                    compare: (left, right) => compareText(
+                      _storageSummary(_nodeStorage(storageByNode, left)),
+                      _storageSummary(_nodeStorage(storageByNode, right)),
+                    ),
+                  ),
+                  SortableDataColumn<Map<String, Object?>>(
+                    label: 'uptime',
+                    numeric: true,
+                    compare: (left, right) => _number(
+                      left['uptime'],
+                    ).compareTo(_number(right['uptime'])),
+                  ),
+                ],
+                rowBuilder: (BuildContext context, Map<String, Object?> node) {
+                  final nodeName = node['node']?.toString() ?? '';
+                  final storages = _nodeStorage(storageByNode, node);
+                  return DataRow(
+                    onSelectChanged: (_) {
+                      context.go(
+                        '/sources/${node['sourceId'] ?? ''}/nodes/'
+                        '${Uri.encodeComponent(nodeName)}',
+                      );
+                    },
+                    cells: <DataCell>[
+                      DataCell(Text(node['source']?.toString() ?? '')),
+                      DataCell(Text(nodeName)),
+                      DataCell(
+                        StatusChip(
+                          status: node['status']?.toString() ?? 'unknown',
+                        ),
+                      ),
+                      DataCell(Text(_cpuModel(node))),
+                      DataCell(Text(_cpuShape(node))),
+                      DataCell(Text(formatBytes(node['maxmem']))),
+                      DataCell(Text(_usedOfTotal(node['mem'], node['maxmem']))),
+                      DataCell(
+                        Text(_usedOfTotal(node['disk'], node['maxdisk'])),
+                      ),
+                      DataCell(Text(storages.length.toString())),
+                      DataCell(Text(_storageTypes(storages))),
+                      DataCell(Text(_storageSummary(storages))),
+                      DataCell(Text(formatSeconds(node['uptime']))),
+                    ],
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _nodeKey(String sourceId, String node) => '$sourceId/$node';
+
+List<Map<String, Object?>> _nodeStorage(
+  Map<String, List<Map<String, Object?>>> storageByNode,
+  Map<String, Object?> node,
+) {
+  return storageByNode[_nodeKey(
+        node['sourceId']?.toString() ?? '',
+        node['node']?.toString() ?? '',
+      )] ??
+      const <Map<String, Object?>>[];
+}
+
+String _cpuModel(Map<String, Object?> node) {
+  final cpuinfo = node['cpuinfo'];
+  if (cpuinfo is Map) {
+    for (final key in <String>['model', 'cpumodel', 'type']) {
+      final value = cpuinfo[key]?.toString() ?? '';
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+  }
+  for (final key in <String>['cpu-model', 'cpumodel', 'model']) {
+    final value = node[key]?.toString() ?? '';
+    if (value.isNotEmpty) {
+      return value;
+    }
+  }
+  return '-';
+}
+
+String _cpuShape(Map<String, Object?> node) {
+  final sockets = _cpuInfoNumber(node, 'sockets');
+  final cores = _cpuInfoNumber(node, 'cores');
+  final cpus = _cpuThreads(node);
+  if (cores > 0 && cpus > 0) {
+    final prefix = sockets > 0 ? '$sockets socket · ' : '';
+    return '$prefix$cores cores · $cpus threads';
+  }
+  if (cpus > 0) {
+    return '$cpus threads';
+  }
+  return '-';
+}
+
+int _cpuThreads(Map<String, Object?> node) {
+  final cpus = _cpuInfoNumber(node, 'cpus');
+  if (cpus > 0) {
+    return cpus;
+  }
+  final cores = _cpuInfoNumber(node, 'cores');
+  final sockets = _cpuInfoNumber(node, 'sockets');
+  if (cores > 0 && sockets > 0) {
+    return cores * sockets;
+  }
+  return cores;
+}
+
+int _cpuInfoNumber(Map<String, Object?> node, String key) {
+  final cpuinfo = node['cpuinfo'];
+  if (cpuinfo is Map) {
+    final value = int.tryParse(cpuinfo[key]?.toString() ?? '');
+    if (value != null) {
+      return value;
+    }
+  }
+  return int.tryParse(node[key]?.toString() ?? '') ?? 0;
+}
+
+String _storageTypes(List<Map<String, Object?>> storages) {
+  final types =
+      storages
+          .map(
+            (storage) =>
+                storage['plugintype']?.toString() ??
+                storage['type']?.toString() ??
+                '',
+          )
+          .where((type) => type.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+  return types.isEmpty ? '-' : types.join(', ');
+}
+
+String _storageSummary(List<Map<String, Object?>> storages) {
+  final withSize = storages.where((storage) {
+    return _number(storage['disk']) > 0 || _number(storage['maxdisk']) > 0;
+  }).toList();
+  if (withSize.isEmpty) {
+    return '-';
+  }
+  final total = withSize.fold<double>(
+    0,
+    (sum, storage) => sum + _number(storage['maxdisk']),
+  );
+  final used = withSize.fold<double>(
+    0,
+    (sum, storage) => sum + _number(storage['disk']),
+  );
+  return '${_usedOfTotal(used, total)} · ${withSize.length} with size';
+}
+
+String _usedOfTotal(Object? used, Object? total) {
+  final usedValue = _number(used);
+  final totalValue = _number(total);
+  if (usedValue <= 0 && totalValue <= 0) {
+    return '-';
+  }
+  if (totalValue <= 0) {
+    return formatBytes(usedValue);
+  }
+  final ratio = totalValue == 0 ? 0 : usedValue / totalValue;
+  return '${formatBytes(usedValue)} / ${formatBytes(totalValue)} '
+      '(${formatPercent(ratio.clamp(0, 1).toDouble())})';
+}
+
+double _number(Object? value) {
+  return double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 class _VmRiskTable extends StatelessWidget {

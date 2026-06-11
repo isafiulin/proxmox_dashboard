@@ -30,6 +30,15 @@ class ResourceHistoryReport {
       storageUsage.isEmpty;
 }
 
+class NodeResourceHistoryReport {
+  const NodeResourceHistoryReport({required this.cpu, required this.ram});
+
+  final List<ResourceHistoryPoint> cpu;
+  final List<ResourceHistoryPoint> ram;
+
+  bool get isEmpty => cpu.isEmpty && ram.isEmpty;
+}
+
 ResourceHistoryReport buildResourceHistory(List<DataSnapshot> snapshots) {
   final pveSnapshots =
       snapshots
@@ -67,6 +76,37 @@ ResourceHistoryReport buildResourceHistory(List<DataSnapshot> snapshots) {
   );
 }
 
+NodeResourceHistoryReport buildNodeResourceHistory(
+  List<DataSnapshot> snapshots, {
+  required String sourceId,
+  required String node,
+}) {
+  final pveSnapshots =
+      snapshots
+          .where(
+            (snapshot) =>
+                snapshot.sourceType == 'proxmox_ve' &&
+                snapshot.sourceId == sourceId,
+          )
+          .toList()
+        ..sort((left, right) => left.collectedAt.compareTo(right.collectedAt));
+
+  final cpu = <ResourceHistoryPoint>[];
+  final ram = <ResourceHistoryPoint>[];
+  for (final snapshot in pveSnapshots) {
+    final nodeRow = _resourceRows(snapshot).where((row) {
+      return row['type'] == 'node' && row['node']?.toString() == node;
+    }).firstOrNull;
+    if (nodeRow == null) {
+      continue;
+    }
+    _addPoint(cpu, snapshot.collectedAt, _cpuRatio(nodeRow));
+    _addPoint(ram, snapshot.collectedAt, _memoryRatio(nodeRow));
+  }
+
+  return NodeResourceHistoryReport(cpu: cpu, ram: ram);
+}
+
 List<Map<String, Object?>> _resourceRows(DataSnapshot snapshot) {
   final resources = snapshot.payload['resources'];
   if (resources is! List) {
@@ -95,6 +135,12 @@ void _addAverage(
   points.add(ResourceHistoryPoint(time: time, value: average.clamp(0, 1)));
 }
 
+void _addPoint(List<ResourceHistoryPoint> points, DateTime time, double value) {
+  if (value.isFinite && !value.isNaN) {
+    points.add(ResourceHistoryPoint(time: time, value: value.clamp(0, 1)));
+  }
+}
+
 double _cpuRatio(Map<String, Object?> row) {
   return double.tryParse(row['cpu']?.toString() ?? '') ?? double.nan;
 }
@@ -114,4 +160,14 @@ double _ratioPair(Object? used, Object? total) {
     return double.nan;
   }
   return usedValue / totalValue;
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    if (!iterator.moveNext()) {
+      return null;
+    }
+    return iterator.current;
+  }
 }

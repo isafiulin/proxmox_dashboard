@@ -2,19 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:frontend/features/audit/presentation/cubit/audit_cubit.dart';
+import 'package:frontend/features/dashboard/data/health_data_loader.dart';
+import 'package:frontend/features/dashboard/domain/health_models.dart';
 import 'package:frontend/features/dashboard/presentation/cubit/dashboard_cubit.dart';
 import 'package:frontend/features/snapshots/domain/data_snapshot.dart';
 import 'package:frontend/features/snapshots/domain/resource_history.dart';
 import 'package:frontend/features/snapshots/presentation/cubit/snapshots_cubit.dart';
+import 'package:frontend/features/sources/domain/backup_analysis.dart';
 import 'package:frontend/features/sources/domain/source.dart';
 import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
 import 'package:frontend/features/users/presentation/cubit/users_cubit.dart';
+import 'package:frontend/shared/formatters/value_formatters.dart';
 import 'package:frontend/shared/widgets/app_card.dart';
 import 'package:frontend/shared/widgets/async_state_view.dart';
 import 'package:frontend/shared/widgets/empty_state.dart';
 import 'package:frontend/shared/widgets/metric_card.dart';
 import 'package:frontend/shared/widgets/resource_line_chart.dart';
 import 'package:frontend/shared/widgets/status_chip.dart';
+import 'package:go_router/go_router.dart';
 
 class OverviewPage extends StatelessWidget {
   const OverviewPage({super.key});
@@ -62,6 +67,8 @@ class OverviewPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 24),
+            const _SuperCriticalAlarms(),
+            const SizedBox(height: 24),
             const _CollectionHistory(),
             const SizedBox(height: 24),
             const _ResourceHistorySection(),
@@ -91,6 +98,91 @@ class OverviewPage extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _SuperCriticalAlarms extends StatelessWidget {
+  const _SuperCriticalAlarms();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<SourcesCubit, SourcesState>(
+      builder: (BuildContext context, SourcesState state) {
+        if (state.items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return FutureBuilder<HealthRuntimeData>(
+          future: loadHealthRuntimeData(context, state.items),
+          builder:
+              (
+                BuildContext context,
+                AsyncSnapshot<HealthRuntimeData> snapshot,
+              ) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const AppCard(child: LoadingStateView());
+                }
+                if (snapshot.hasError) {
+                  return ErrorStateView(message: snapshot.error.toString());
+                }
+                final data = snapshot.data;
+                final alarms = data == null
+                    ? <_CriticalAlarm>[]
+                    : _buildCriticalAlarms(data);
+                return AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.priority_high_outlined),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Super critical alarms',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          StatusChip(
+                            status: alarms.isEmpty
+                                ? 'ok'
+                                : '${alarms.length} critical',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (alarms.isEmpty)
+                        const EmptyState(
+                          icon: Icons.verified_outlined,
+                          text: 'Super critical alarm-ов сейчас нет.',
+                        )
+                      else
+                        ...alarms.take(12).map(_CriticalAlarmTile.new),
+                    ],
+                  ),
+                );
+              },
+        );
+      },
+    );
+  }
+}
+
+class _CriticalAlarmTile extends StatelessWidget {
+  const _CriticalAlarmTile(this.alarm);
+
+  final _CriticalAlarm alarm;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(alarm.icon, color: Colors.redAccent),
+      title: Text(alarm.title),
+      subtitle: Text(alarm.subtitle),
+      trailing: const StatusChip(status: 'critical'),
+      onTap: alarm.path == null ? null : () => context.go(alarm.path!),
     );
   }
 }
@@ -271,6 +363,185 @@ class _SnapshotTile extends StatelessWidget {
       trailing: StatusChip(status: snapshot.status),
     );
   }
+}
+
+class _CriticalAlarm {
+  const _CriticalAlarm({
+    required this.priority,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.path,
+  });
+
+  final int priority;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? path;
+}
+
+List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
+  final alarms = <_CriticalAlarm>[];
+
+  for (final error in data.collectionErrors) {
+    alarms.add(
+      _CriticalAlarm(
+        priority: 0,
+        icon: Icons.cloud_off_outlined,
+        title: 'Ошибка сбора: ${error['source'] ?? 'source'}',
+        subtitle: error['error']?.toString() ?? 'Интеграция не ответила.',
+      ),
+    );
+  }
+
+  for (final guest in data.guests) {
+    final status = guest['status']?.toString().toLowerCase() ?? '';
+    final source = guest['source']?.toString() ?? '';
+    final node = guest['node']?.toString() ?? '';
+    final guestType = guest['type']?.toString() ?? '';
+    final vmid = guest['vmid']?.toString() ?? '';
+    final name = guest['name']?.toString() ?? '';
+    final label = name.isEmpty
+        ? '$guestType/$vmid'
+        : '$name ($guestType/$vmid)';
+    final path = _guestPath(guest);
+
+    final backupSummary = analyzeGuestBackups(
+      guestType: guestType,
+      vmid: vmid,
+      guestName: name,
+      snapshots: data.backupSnapshots,
+    );
+    if (status == 'running' &&
+        backupSummary.status == BackupAgeStatus.missing) {
+      alarms.add(
+        _CriticalAlarm(
+          priority: 1,
+          icon: Icons.backup_outlined,
+          title: '$label работает без backup',
+          subtitle: '$source / $node · snapshots для VM/LXC не найдены',
+          path: path,
+        ),
+      );
+    }
+
+    _addRatioAlarm(
+      alarms,
+      priority: 3,
+      icon: Icons.speed_outlined,
+      title: '$label CPU >= 90%',
+      subtitle: '$source / $node · ${formatPercent(ratioValue(guest['cpu']))}',
+      value: ratioValue(guest['cpu']),
+      path: path,
+    );
+    _addRatioAlarm(
+      alarms,
+      priority: 3,
+      icon: Icons.memory_outlined,
+      title: '$label RAM >= 90%',
+      subtitle:
+          '$source / $node · ${formatPercent(ratioPairValue(guest['mem'], guest['maxmem']))}',
+      value: ratioPairValue(guest['mem'], guest['maxmem']),
+      path: path,
+    );
+  }
+
+  for (final node in data.nodes) {
+    final source = node['source']?.toString() ?? '';
+    final nodeName = node['node']?.toString() ?? '';
+    final path = _nodePath(node);
+    _addRatioAlarm(
+      alarms,
+      priority: 2,
+      icon: Icons.hub_outlined,
+      title: 'Нода $nodeName CPU >= 90%',
+      subtitle: '$source · ${formatPercent(ratioValue(node['cpu']))}',
+      value: ratioValue(node['cpu']),
+      path: path,
+    );
+    _addRatioAlarm(
+      alarms,
+      priority: 2,
+      icon: Icons.memory_outlined,
+      title: 'Нода $nodeName RAM >= 90%',
+      subtitle:
+          '$source · ${formatPercent(ratioPairValue(node['mem'], node['maxmem']))}',
+      value: ratioPairValue(node['mem'], node['maxmem']),
+      path: path,
+    );
+  }
+
+  for (final storage in data.storageResources) {
+    final usage = ratioPairValue(storage['disk'], storage['maxdisk']);
+    final nodeName = storage['node']?.toString() ?? '';
+    final storageName = storage['storage']?.toString() ?? 'storage';
+    _addRatioAlarm(
+      alarms,
+      priority: 2,
+      icon: Icons.storage_outlined,
+      title: 'Storage $storageName >= 90%',
+      subtitle:
+          '${storage['source'] ?? ''} / $nodeName · ${formatPercent(usage)} · '
+          '${formatBytes(storage['disk'])} / ${formatBytes(storage['maxdisk'])}',
+      value: usage,
+      path: _nodePath(storage),
+    );
+  }
+
+  alarms.sort((left, right) {
+    final priorityCompare = left.priority.compareTo(right.priority);
+    if (priorityCompare != 0) {
+      return priorityCompare;
+    }
+    return left.title.compareTo(right.title);
+  });
+  return alarms;
+}
+
+void _addRatioAlarm(
+  List<_CriticalAlarm> alarms, {
+  required int priority,
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required double value,
+  required String? path,
+}) {
+  if (value >= 0.9) {
+    alarms.add(
+      _CriticalAlarm(
+        priority: priority,
+        icon: icon,
+        title: title,
+        subtitle: subtitle,
+        path: path,
+      ),
+    );
+  }
+}
+
+String? _nodePath(Map<String, Object?> row) {
+  final sourceId = row['sourceId']?.toString() ?? '';
+  final node = row['node']?.toString() ?? '';
+  if (sourceId.isEmpty || node.isEmpty) {
+    return null;
+  }
+  return '/sources/$sourceId/nodes/${Uri.encodeComponent(node)}';
+}
+
+String? _guestPath(Map<String, Object?> row) {
+  final sourceId = row['sourceId']?.toString() ?? '';
+  final guestType = row['type']?.toString() ?? '';
+  final node = row['node']?.toString() ?? '';
+  final vmid = row['vmid']?.toString() ?? '';
+  if (sourceId.isEmpty || guestType.isEmpty || node.isEmpty || vmid.isEmpty) {
+    return null;
+  }
+  final name = row['name']?.toString() ?? '';
+  final query = name.isEmpty ? '' : '?name=${Uri.encodeQueryComponent(name)}';
+  return '/sources/$sourceId/guests/$guestType/'
+      '${Uri.encodeComponent(node)}/$vmid$query';
 }
 
 class _RecentSources extends StatelessWidget {

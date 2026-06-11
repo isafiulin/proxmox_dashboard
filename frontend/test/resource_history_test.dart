@@ -63,4 +63,61 @@ void main() {
     expect(report.guestRam.map((point) => point.value), <double>[0.2, 0.1]);
     expect(report.storageUsage.map((point) => point.value), <double>[0.7, 0.9]);
   });
+
+  test('builds resource history for a single node', () {
+    final snapshots = <DataSnapshot>[
+      DataSnapshot(
+        id: '1',
+        sourceId: 'pve-a',
+        sourceType: 'proxmox_ve',
+        status: 'ok',
+        collectedAt: DateTime(2026, 6, 5, 10),
+        payload: const <String, Object?>{
+          'resources': <Map<String, Object?>>[
+            <String, Object?>{
+              'type': 'node',
+              'node': 'n1',
+              'cpu': 0.2,
+              'mem': 50,
+              'maxmem': 100,
+            },
+            <String, Object?>{
+              'type': 'node',
+              'node': 'n2',
+              'cpu': 0.9,
+              'mem': 90,
+              'maxmem': 100,
+            },
+          ],
+        },
+      ),
+      DataSnapshot(
+        id: '2',
+        sourceId: 'pve-a',
+        sourceType: 'proxmox_ve',
+        status: 'ok',
+        collectedAt: DateTime(2026, 6, 5, 11),
+        payload: const <String, Object?>{
+          'resources': <Map<String, Object?>>[
+            <String, Object?>{
+              'type': 'node',
+              'node': 'n1',
+              'cpu': 0.4,
+              'mem': 70,
+              'maxmem': 100,
+            },
+          ],
+        },
+      ),
+    ];
+
+    final report = buildNodeResourceHistory(
+      snapshots,
+      sourceId: 'pve-a',
+      node: 'n1',
+    );
+
+    expect(report.cpu.map((point) => point.value), <double>[0.2, 0.4]);
+    expect(report.ram.map((point) => point.value), <double>[0.5, 0.7]);
+  });
 }

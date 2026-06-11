@@ -47,6 +47,7 @@ class NodeHealthPage extends StatelessWidget {
                         nodes: <Map<String, Object?>>[],
                         guests: <Map<String, Object?>>[],
                         tasks: <Map<String, Object?>>[],
+                        storageResources: <Map<String, Object?>>[],
                         backupSnapshots: <Map<String, Object?>>[],
                         collectionErrors: <Map<String, Object?>>[],
                       ),
