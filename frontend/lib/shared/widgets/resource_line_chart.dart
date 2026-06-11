@@ -11,6 +11,7 @@ class ResourceLineChart extends StatefulWidget {
     required this.points,
     required this.icon,
     this.description,
+    this.now,
     super.key,
   });
 
@@ -18,6 +19,7 @@ class ResourceLineChart extends StatefulWidget {
   final List<ResourceHistoryPoint> points;
   final IconData icon;
   final String? description;
+  final DateTime? now;
 
   @override
   State<ResourceLineChart> createState() => _ResourceLineChartState();
@@ -28,7 +30,7 @@ class _ResourceLineChartState extends State<ResourceLineChart> {
 
   @override
   Widget build(BuildContext context) {
-    final points = _filterPoints(widget.points, _range);
+    final points = _filterPoints(widget.points, _range, widget.now);
     final latest = points.isEmpty ? null : points.last.value;
     final min = points.isEmpty
         ? null
@@ -85,10 +87,12 @@ class _ResourceLineChartState extends State<ResourceLineChart> {
             ),
             const SizedBox(height: 12),
             if (points.length < 2)
-              const Expanded(
+              Expanded(
                 child: EmptyState(
                   icon: Icons.show_chart_outlined,
-                  text: 'Недостаточно истории для графика.',
+                  text: points.isEmpty
+                      ? 'За выбранный период нет истории.'
+                      : 'Недостаточно истории для графика.',
                 ),
               )
             else
@@ -189,16 +193,15 @@ enum _ChartRange {
 List<ResourceHistoryPoint> _filterPoints(
   List<ResourceHistoryPoint> points,
   _ChartRange range,
+  DateTime? now,
 ) {
   if (points.isEmpty) {
     return points;
   }
-  final latest = points.last.time;
-  final from = latest.subtract(range.duration);
-  final filtered = points
+  final from = (now ?? DateTime.now()).subtract(range.duration);
+  return points
       .where((point) => !point.time.isBefore(from))
       .toList(growable: false);
-  return filtered.isEmpty ? points : filtered;
 }
 
 class _YAxisLabels extends StatelessWidget {
