@@ -19,10 +19,17 @@ class SourcesRepository {
     required String type,
     required String baseUrl,
     required String token,
+    required String backupNamespace,
   }) async {
     await _api.post(
       '/sources',
-      body: {'name': name, 'type': type, 'baseUrl': baseUrl, 'token': token},
+      body: {
+        'name': name,
+        'type': type,
+        'baseUrl': baseUrl,
+        'token': token,
+        'backupNamespace': backupNamespace,
+      },
     );
   }
 
@@ -36,6 +43,7 @@ class SourcesRepository {
     required String type,
     required String baseUrl,
     required String token,
+    required String backupNamespace,
   }) async {
     await _api.patch(
       '/sources/$id',
@@ -44,6 +52,7 @@ class SourcesRepository {
         'type': type,
         'baseUrl': baseUrl,
         'token': token,
+        'backupNamespace': backupNamespace,
       },
     );
   }

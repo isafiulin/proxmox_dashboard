@@ -94,6 +94,8 @@ VmHealthReport buildVmHealthReport({
       guestType: guest['type']?.toString() ?? '',
       vmid: guest['vmid']?.toString() ?? '',
       guestName: guest['name']?.toString() ?? '',
+      backupNamespace: guest['backupNamespace']?.toString() ?? '',
+      backupNamespaces: guestBackupNamespaces(guest),
       snapshots: snapshots,
     ).status;
     if (backupStatus == BackupAgeStatus.critical ||

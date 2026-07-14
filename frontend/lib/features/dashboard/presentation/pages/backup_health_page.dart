@@ -73,17 +73,34 @@ class BackupHealthPage extends StatelessWidget {
     }
 
     final guests = <_GuestBackupIssue>[];
+    final allGuests = <Map<String, Object?>>[];
     var totalGuests = 0;
     for (final source in veSources) {
       final data = await repository.loadProxmoxVe(source.id);
+      final backupNamespaces = backupNamespacesFromStorageConfig(
+        data.storageConfig,
+        manualNamespace: source.backupNamespace,
+      );
+      final effectiveBackupNamespaces = backupNamespaces.isEmpty
+          ? <String>[source.backupNamespace]
+          : backupNamespaces.toList();
       for (final guest in data.vmResources.where(_isGuest)) {
         totalGuests += 1;
+        final enrichedGuest = <String, Object?>{
+          'source': source.name,
+          'sourceId': source.id,
+          'backupNamespace': source.backupNamespace,
+          'backupNamespaces': effectiveBackupNamespaces,
+          ...guest,
+        };
+        allGuests.add(enrichedGuest);
         final guestType = guest['type']?.toString() ?? '';
         final vmid = guest['vmid']?.toString() ?? '';
         final summary = analyzeGuestBackups(
           guestType: guestType,
           vmid: vmid,
           guestName: guest['name']?.toString() ?? '',
+          backupNamespaces: effectiveBackupNamespaces,
           snapshots: snapshots,
         );
         if (summary.status == BackupAgeStatus.ok ||
@@ -118,6 +135,10 @@ class BackupHealthPage extends StatelessWidget {
 
     return _BackupHealthReport(
       issues: guests,
+      namespaceGaps: analyzeRootNamespaceGaps(
+        guests: allGuests,
+        snapshots: snapshots,
+      ),
       totalGuests: totalGuests,
       pbsSources: pbsSources.length,
       snapshots: snapshots.length,
@@ -138,6 +159,7 @@ class _BackupHealthContent extends StatelessWidget {
     final critical = report.issues
         .where((issue) => issue.status == BackupAgeStatus.critical)
         .length;
+    final namespaceGaps = report.namespaceGaps.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,6 +189,11 @@ class _BackupHealthContent extends StatelessWidget {
               icon: Icons.schedule_outlined,
             ),
             MetricCard(
+              label: 'Root без namespace',
+              value: namespaceGaps.toString(),
+              icon: Icons.drive_folder_upload_outlined,
+            ),
+            MetricCard(
               label: 'Всего VM/LXC',
               value: report.totalGuests.toString(),
               icon: Icons.memory_outlined,
@@ -175,6 +202,8 @@ class _BackupHealthContent extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         const _BackupStatusInfoCard(),
+        const SizedBox(height: 16),
+        _NamespaceGapTable(items: report.namespaceGaps),
         const SizedBox(height: 16),
         AppCard(
           child: Column(
@@ -299,9 +328,120 @@ class _BackupStatusInfoCard extends StatelessWidget {
   }
 }
 
+class _NamespaceGapTable extends StatelessWidget {
+  const _NamespaceGapTable({required this.items});
+
+  final List<BackupNamespaceGap> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Root backups без namespace',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Переходное состояние: backup найден в root namespace, но в '
+            'namespace из PVE storage config для этой VM/LXC backup ещё не найден.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.mutedInk),
+          ),
+          const SizedBox(height: 12),
+          if (items.isEmpty)
+            const EmptyState(
+              icon: Icons.verified_outlined,
+              text: 'Root-only backups для namespaced VM/LXC не найдены.',
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SortableDataTable<BackupNamespaceGap>(
+                showCheckboxColumn: false,
+                initialSortColumnIndex: 6,
+                items: items,
+                columns: <SortableDataColumn<BackupNamespaceGap>>[
+                  SortableDataColumn<BackupNamespaceGap>(
+                    label: 'source',
+                    compare: (left, right) =>
+                        compareText(left.sourceName, right.sourceName),
+                  ),
+                  SortableDataColumn<BackupNamespaceGap>(
+                    label: 'node',
+                    compare: (left, right) =>
+                        compareText(left.node, right.node),
+                  ),
+                  SortableDataColumn<BackupNamespaceGap>(
+                    label: 'vm/lxc',
+                    compare: (left, right) =>
+                        compareText(left.displayName, right.displayName),
+                  ),
+                  SortableDataColumn<BackupNamespaceGap>(
+                    label: 'name',
+                    compare: (left, right) =>
+                        compareText(left.name, right.name),
+                  ),
+                  SortableDataColumn<BackupNamespaceGap>(
+                    label: 'expected namespace',
+                    compare: (left, right) => compareText(
+                      left.expectedNamespaces.join(', '),
+                      right.expectedNamespaces.join(', '),
+                    ),
+                  ),
+                  SortableDataColumn<BackupNamespaceGap>(
+                    label: 'root backups',
+                    numeric: true,
+                    compare: (left, right) =>
+                        left.rootBackupCount.compareTo(right.rootBackupCount),
+                  ),
+                  SortableDataColumn<BackupNamespaceGap>(
+                    label: 'root last backup',
+                    compare: (left, right) => compareNullableDateTime(
+                      left.rootLatestBackupAt,
+                      right.rootLatestBackupAt,
+                    ),
+                  ),
+                ],
+                rowBuilder: (context, item) {
+                  return DataRow(
+                    onSelectChanged: (_) {
+                      final query = item.name.isEmpty
+                          ? ''
+                          : '?name=${Uri.encodeQueryComponent(item.name)}';
+                      context.go(
+                        '/sources/${item.sourceId}/guests/'
+                        '${item.guestType}/'
+                        '${Uri.encodeComponent(item.node)}/'
+                        '${item.vmid}$query',
+                      );
+                    },
+                    cells: <DataCell>[
+                      DataCell(Text(item.sourceName)),
+                      DataCell(Text(item.node)),
+                      DataCell(Text(item.displayName)),
+                      DataCell(Text(item.name)),
+                      DataCell(Text(item.expectedNamespaces.join(', '))),
+                      DataCell(Text(item.rootBackupCount.toString())),
+                      DataCell(Text(_formatDateTime(item.rootLatestBackupAt))),
+                    ],
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BackupHealthReport {
   const _BackupHealthReport({
     required this.issues,
+    required this.namespaceGaps,
     required this.totalGuests,
     required this.pbsSources,
     required this.snapshots,
@@ -309,11 +449,13 @@ class _BackupHealthReport {
 
   const _BackupHealthReport.empty()
     : issues = const <_GuestBackupIssue>[],
+      namespaceGaps = const <BackupNamespaceGap>[],
       totalGuests = 0,
       pbsSources = 0,
       snapshots = 0;
 
   final List<_GuestBackupIssue> issues;
+  final List<BackupNamespaceGap> namespaceGaps;
   final int totalGuests;
   final int pbsSources;
   final int snapshots;

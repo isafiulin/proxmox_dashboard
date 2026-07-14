@@ -12,6 +12,7 @@ class SourceDataRepository {
       _list('/proxmox-ve/$sourceId/node-resources'),
       _list('/proxmox-ve/$sourceId/vm-resources'),
       _list('/proxmox-ve/$sourceId/storage-resources'),
+      _listOptional('/proxmox-ve/$sourceId/storage-config'),
       _list('/proxmox-ve/$sourceId/resources'),
       _list('/proxmox-ve/$sourceId/tasks'),
     ]);
@@ -20,8 +21,9 @@ class SourceDataRepository {
     final nodeResources = results[1];
     final vmResources = results[2];
     final storageResources = results[3];
-    final resources = results[4];
-    final tasks = results[5];
+    final storageConfig = results[4];
+    final resources = results[5];
+    final tasks = results[6];
     final nodeStatuses = await _listOptional(
       '/proxmox-ve/$sourceId/node-statuses',
     );
@@ -55,6 +57,7 @@ class SourceDataRepository {
       nodeResources: nodeResources,
       vmResources: effectiveVmResources,
       storageResources: effectiveStorageResources,
+      storageConfig: storageConfig,
       resources: mergedResources,
       tasks: tasks,
     );
@@ -83,6 +86,10 @@ class SourceDataRepository {
     return _mapOptional(
       '/proxmox-ve/$sourceId/nodes/${Uri.encodeComponent(node)}/version',
     );
+  }
+
+  Future<List<Map<String, Object?>>> loadStorageConfig(String sourceId) {
+    return _listOptional('/proxmox-ve/$sourceId/storage-config');
   }
 
   Future<List<Map<String, Object?>>> loadNodeNetwork({
@@ -119,17 +126,22 @@ class SourceDataRepository {
       if (store == null || store.isEmpty) {
         continue;
       }
-      final List<Map<String, Object?>> datastoreSnapshots = await _list(
-        '/proxmox-backup/$sourceId/datastores/${Uri.encodeComponent(store)}/snapshots',
-      );
-      snapshots.addAll(
-        datastoreSnapshots.map(
-          (Map<String, Object?> snapshot) => <String, Object?>{
-            'datastore': store,
-            ...snapshot,
-          },
-        ),
-      );
+      final namespaces = await _backupNamespaces(sourceId, store);
+      for (final namespace in namespaces) {
+        final path =
+            '/proxmox-backup/$sourceId/datastores/${Uri.encodeComponent(store)}/snapshots'
+            '${namespace.isEmpty ? '' : '?namespace=${Uri.encodeQueryComponent(namespace)}'}';
+        final List<Map<String, Object?>> datastoreSnapshots = await _list(path);
+        snapshots.addAll(
+          datastoreSnapshots.map(
+            (Map<String, Object?> snapshot) => <String, Object?>{
+              'datastore': store,
+              'namespace': namespace,
+              ...snapshot,
+            },
+          ),
+        );
+      }
     }
 
     return ProxmoxBackupData(
@@ -169,6 +181,27 @@ class SourceDataRepository {
     } catch (_) {
       return <Map<String, Object?>>[];
     }
+  }
+
+  Future<List<String>> _backupNamespaces(
+    String sourceId,
+    String datastore,
+  ) async {
+    final namespaces = <String>{''};
+    final rows = await _listOptional(
+      '/proxmox-backup/$sourceId/datastores/${Uri.encodeComponent(datastore)}/namespaces',
+    );
+    for (final row in rows) {
+      final namespace =
+          row['ns']?.toString() ??
+          row['namespace']?.toString() ??
+          row['path']?.toString() ??
+          '';
+      if (namespace.isNotEmpty) {
+        namespaces.add(namespace);
+      }
+    }
+    return namespaces.toList();
   }
 
   Future<Map<String, Object?>> _mapOptional(String path) async {
@@ -217,6 +250,7 @@ class ProxmoxVeData {
     required this.nodeResources,
     required this.vmResources,
     required this.storageResources,
+    required this.storageConfig,
     required this.resources,
     required this.tasks,
   });
@@ -225,6 +259,7 @@ class ProxmoxVeData {
   final List<Map<String, Object?>> nodeResources;
   final List<Map<String, Object?>> vmResources;
   final List<Map<String, Object?>> storageResources;
+  final List<Map<String, Object?>> storageConfig;
   final List<Map<String, Object?>> resources;
   final List<Map<String, Object?>> tasks;
 }

@@ -413,6 +413,7 @@ class _ProxmoxBackupSections extends StatelessWidget {
     final coverageRows = report.guests.map((guest) {
       return <String, Object?>{
         'guest': guest.displayName,
+        'namespace': guest.namespace.isEmpty ? 'root' : guest.namespace,
         'backup-type': guest.backupType,
         'backup-id': guest.backupId,
         'snapshots': guest.count,
@@ -461,6 +462,7 @@ class _ProxmoxBackupSections extends StatelessWidget {
           rows: coverageRows,
           preferredColumns: const <String>[
             'guest',
+            'namespace',
             'snapshots',
             'last-backup',
             'avg-interval',
@@ -485,6 +487,7 @@ class _ProxmoxBackupSections extends StatelessWidget {
           rows: data?.snapshots ?? <Map<String, Object?>>[],
           preferredColumns: const <String>[
             'datastore',
+            'namespace',
             'backup-type',
             'backup-id',
             'backup-time',

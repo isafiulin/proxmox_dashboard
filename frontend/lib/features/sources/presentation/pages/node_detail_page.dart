@@ -282,6 +282,10 @@ class _NodeDetailContent extends StatelessWidget {
         _NodeGuestTable(
           sourceId: source.id,
           node: node,
+          backupNamespaces: backupNamespacesFromStorageConfig(
+            data.storageConfig,
+            manualNamespace: source.backupNamespace,
+          ),
           guests: guests,
           guestInterfaces: guestInterfaces,
           backupSnapshots: backupSnapshots,
@@ -396,6 +400,7 @@ class _NodeGuestTable extends StatefulWidget {
   const _NodeGuestTable({
     required this.sourceId,
     required this.node,
+    required this.backupNamespaces,
     required this.guests,
     required this.guestInterfaces,
     required this.backupSnapshots,
@@ -403,6 +408,7 @@ class _NodeGuestTable extends StatefulWidget {
 
   final String sourceId;
   final String node;
+  final Set<String> backupNamespaces;
   final List<Map<String, Object?>> guests;
   final Map<String, List<Map<String, Object?>>> guestInterfaces;
   final List<Map<String, Object?>> backupSnapshots;
@@ -431,6 +437,9 @@ class _NodeGuestTableState extends State<_NodeGuestTable> {
         guestType: guestType,
         vmid: vmid,
         guestName: guest['name']?.toString() ?? '',
+        backupNamespaces: widget.backupNamespaces.isEmpty
+            ? null
+            : widget.backupNamespaces,
         snapshots: widget.backupSnapshots,
       );
       return <String, Object?>{

@@ -40,6 +40,15 @@ class InfrastructureReadService {
         '/api2/json/cluster/resources?type=storage');
   }
 
+  Future<Object?> proxmoxVeStorageConfig(String sourceId) async {
+    final Source source = _requireSource(sourceId, 'proxmox_ve');
+    return _client.getVe(
+      source,
+      await _sources.credentialFor(source.id),
+      '/api2/json/storage',
+    );
+  }
+
   Future<Object?> proxmoxVeNodeStatuses(String sourceId) async {
     final Source source = _requireSource(sourceId, 'proxmox_ve');
     final credential = await _sources.credentialFor(source.id);
@@ -222,13 +231,26 @@ class InfrastructureReadService {
         '/api2/json/nodes/localhost/tasks?limit=250');
   }
 
-  Future<Object?> proxmoxBackupSnapshots(
+  Future<Object?> proxmoxBackupNamespaces(
       String sourceId, String datastore) async {
     final Source source = _requireSource(sourceId, 'proxmox_backup');
     return _client.getBackup(
       source,
       await _sources.credentialFor(source.id),
-      '/api2/json/admin/datastore/$datastore/snapshots',
+      '/api2/json/admin/datastore/$datastore/namespace?max-depth=7',
+    );
+  }
+
+  Future<Object?> proxmoxBackupSnapshots(String sourceId, String datastore,
+      {String namespace = ''}) async {
+    final Source source = _requireSource(sourceId, 'proxmox_backup');
+    final nsQuery = namespace.trim().isEmpty
+        ? ''
+        : '?ns=${Uri.encodeQueryComponent(namespace.trim())}';
+    return _client.getBackup(
+      source,
+      await _sources.credentialFor(source.id),
+      '/api2/json/admin/datastore/$datastore/snapshots$nsQuery',
     );
   }
 

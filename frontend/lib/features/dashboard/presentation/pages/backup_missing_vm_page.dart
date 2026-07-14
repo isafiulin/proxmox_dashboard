@@ -182,6 +182,11 @@ class _MissingBackupTable extends StatelessWidget {
                         compareText(left.displayName, right.displayName),
                   ),
                   SortableDataColumn<BackupMissingGuestItem>(
+                    label: 'namespace',
+                    compare: (left, right) =>
+                        compareText(left.namespace, right.namespace),
+                  ),
+                  SortableDataColumn<BackupMissingGuestItem>(
                     label: 'pbs name',
                     compare: (left, right) =>
                         compareText(left.snapshotName, right.snapshotName),
@@ -237,6 +242,7 @@ class _MissingBackupTable extends StatelessWidget {
                             : (_) => _openCandidate(context, candidate),
                         cells: <DataCell>[
                           DataCell(Text(item.displayName)),
+                          DataCell(Text(_namespaceLabel(item.namespace))),
                           DataCell(
                             Text(
                               item.snapshotName.isEmpty
@@ -308,6 +314,10 @@ String _candidateText(List<BackupMissingGuestCandidate> candidates) {
 
 String _joinSet(Set<String> values) {
   return values.isEmpty ? '-' : values.join(', ');
+}
+
+String _namespaceLabel(String namespace) {
+  return namespace.isEmpty ? 'root' : namespace;
 }
 
 String _formatDateTime(DateTime? value) {

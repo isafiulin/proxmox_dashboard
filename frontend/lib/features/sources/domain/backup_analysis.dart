@@ -40,6 +40,7 @@ class BackupGuestReport {
     required this.count,
     required this.totalSizeBytes,
     required this.averageInterval,
+    this.namespace = '',
     this.latestBackupAt,
   });
 
@@ -49,6 +50,7 @@ class BackupGuestReport {
   final int count;
   final double totalSizeBytes;
   final Duration? averageInterval;
+  final String namespace;
   final DateTime? latestBackupAt;
 
   String get displayName => '$backupType/$backupId';
@@ -86,6 +88,7 @@ class BackupScheduleItem {
     required this.weekdayCounts,
     required this.datastores,
     required this.averageInterval,
+    this.namespace = '',
     this.latestBackupAt,
   });
 
@@ -96,6 +99,7 @@ class BackupScheduleItem {
   final Map<int, int> weekdayCounts;
   final Set<String> datastores;
   final Duration? averageInterval;
+  final String namespace;
   final DateTime? latestBackupAt;
 
   String get displayName => '$backupType/$backupId';
@@ -120,6 +124,7 @@ class BackupCalendarEntry {
     required this.backupAt,
     required this.datastore,
     required this.backupSource,
+    this.namespace = '',
   });
 
   final String backupType;
@@ -127,6 +132,7 @@ class BackupCalendarEntry {
   final DateTime backupAt;
   final String datastore;
   final String backupSource;
+  final String namespace;
 
   String get displayName => '$backupType/$backupId';
 }
@@ -150,6 +156,7 @@ class BackupMissingGuestItem {
     required this.backupType,
     required this.backupId,
     required this.snapshotName,
+    required this.namespace,
     required this.backupSources,
     required this.datastores,
     required this.count,
@@ -161,6 +168,7 @@ class BackupMissingGuestItem {
   final String backupType;
   final String backupId;
   final String snapshotName;
+  final String namespace;
   final Set<String> backupSources;
   final Set<String> datastores;
   final int count;
@@ -169,6 +177,32 @@ class BackupMissingGuestItem {
   final List<BackupMissingGuestCandidate> candidates;
 
   String get displayName => '$backupType/$backupId';
+}
+
+class BackupNamespaceGap {
+  const BackupNamespaceGap({
+    required this.sourceId,
+    required this.sourceName,
+    required this.node,
+    required this.guestType,
+    required this.vmid,
+    required this.name,
+    required this.expectedNamespaces,
+    required this.rootLatestBackupAt,
+    required this.rootBackupCount,
+  });
+
+  final String sourceId;
+  final String sourceName;
+  final String node;
+  final String guestType;
+  final String vmid;
+  final String name;
+  final Set<String> expectedNamespaces;
+  final DateTime? rootLatestBackupAt;
+  final int rootBackupCount;
+
+  String get displayName => '$guestType/$vmid';
 }
 
 class BackupMissingGuestCandidate {
@@ -211,11 +245,13 @@ BackupMissingGuestsReport analyzeMissingBackupGuests({
       .toList();
   final deployedByBackupKey = <String, List<_BackupGuestIdentity>>{};
   for (final guest in deployedGuests) {
-    deployedByBackupKey.putIfAbsent(
-      guest.backupKey,
-      () => <_BackupGuestIdentity>[],
-    );
-    deployedByBackupKey[guest.backupKey]!.add(guest);
+    for (final backupKey in guest.backupKeys) {
+      deployedByBackupKey.putIfAbsent(
+        backupKey,
+        () => <_BackupGuestIdentity>[],
+      );
+      deployedByBackupKey[backupKey]!.add(guest);
+    }
   }
 
   final groups = <String, List<Map<String, Object?>>>{};
@@ -225,10 +261,11 @@ BackupMissingGuestsReport analyzeMissingBackupGuests({
     if (backupType.isEmpty || backupId.isEmpty) {
       continue;
     }
+    final namespace = snapshotNamespace(snapshot);
     final name = _normalizeName(_snapshotName(snapshot));
     final groupKey = name.isEmpty
-        ? '$backupType/$backupId'
-        : '$backupType/$backupId/$name';
+        ? _backupKey(namespace, backupType, backupId)
+        : '${_backupKey(namespace, backupType, backupId)}/$name';
     groups.putIfAbsent(groupKey, () => <Map<String, Object?>>[]);
     groups[groupKey]!.add(snapshot);
   }
@@ -243,7 +280,11 @@ BackupMissingGuestsReport analyzeMissingBackupGuests({
     final backupId = latest['backup-id']?.toString() ?? '';
     final snapshotName = _snapshotName(latest);
     final normalizedSnapshotName = _normalizeName(snapshotName);
-    final backupKey = '$backupType/$backupId';
+    final backupKey = _backupKey(
+      snapshotNamespace(latest),
+      backupType,
+      backupId,
+    );
     final exactCandidates =
         deployedByBackupKey[backupKey] ?? const <_BackupGuestIdentity>[];
     final hasExactMatch = exactCandidates.any((guest) {
@@ -261,6 +302,7 @@ BackupMissingGuestsReport analyzeMissingBackupGuests({
         backupType: backupType,
         backupId: backupId,
         snapshotName: snapshotName,
+        namespace: snapshotNamespace(latest),
         backupSources: group
             .map((snapshot) => snapshot['backupSource']?.toString() ?? '')
             .where((value) => value.isNotEmpty)
@@ -318,7 +360,7 @@ List<BackupMissingGuestCandidate> _missingGuestCandidates({
             normalizedSnapshotName.contains(guest.normalizedName))) {
       score = 100;
       reason = 'name match';
-    } else if (guest.backupKey == backupKey) {
+    } else if (guest.backupKeys.contains(backupKey)) {
       score = 60;
       reason = 'same backup id';
     }
@@ -356,11 +398,13 @@ class _BackupGuestIdentity {
     required this.guestType,
     required this.vmid,
     required this.name,
+    required this.namespaces,
   });
 
   factory _BackupGuestIdentity.fromGuest(Map<String, Object?> guest) {
     final guestType = guest['type']?.toString() ?? '';
     final vmid = guest['vmid']?.toString() ?? '';
+    final namespaces = _guestBackupNamespaces(guest);
     return _BackupGuestIdentity(
       sourceId: guest['sourceId']?.toString() ?? '',
       sourceName: guest['source']?.toString() ?? '',
@@ -368,6 +412,7 @@ class _BackupGuestIdentity {
       guestType: guestType,
       vmid: vmid,
       name: guest['name']?.toString() ?? '',
+      namespaces: namespaces.isEmpty ? const <String>{''} : namespaces,
     );
   }
 
@@ -377,9 +422,11 @@ class _BackupGuestIdentity {
   final String guestType;
   final String vmid;
   final String name;
+  final Set<String> namespaces;
 
   String get backupType => guestType == 'lxc' ? 'ct' : 'vm';
-  String get backupKey => '$backupType/$vmid';
+  Iterable<String> get backupKeys =>
+      namespaces.map((namespace) => _backupKey(namespace, backupType, vmid));
   String get normalizedName => _normalizeName(name);
 }
 
@@ -406,12 +453,14 @@ BackupScheduleReport analyzeBackupSchedule(
       continue;
     }
 
+    final namespace = snapshotNamespace(snapshot);
     final localTime = snapshotTime(snapshot).toLocal();
     final eventKey =
-        '$backupType/$backupId/${localTime.toUtc().millisecondsSinceEpoch}';
+        '${_backupKey(namespace, backupType, backupId)}/${localTime.toUtc().millisecondsSinceEpoch}';
     final eventGroup = calendarEventGroups.putIfAbsent(
       eventKey,
       () => _BackupCalendarEventGroup(
+        namespace: namespace,
         backupType: backupType,
         backupId: backupId,
         backupAt: localTime,
@@ -421,11 +470,9 @@ BackupScheduleReport analyzeBackupSchedule(
       backupSource: snapshot['backupSource']?.toString() ?? '',
       datastore: snapshot['datastore']?.toString() ?? '',
     );
-    byGuest.putIfAbsent(
-      '$backupType/$backupId',
-      () => <Map<String, Object?>>[],
-    );
-    byGuest['$backupType/$backupId']!.add(snapshot);
+    final guestKey = _backupKey(namespace, backupType, backupId);
+    byGuest.putIfAbsent(guestKey, () => <Map<String, Object?>>[]);
+    byGuest[guestKey]!.add(snapshot);
   }
 
   for (final eventGroup in calendarEventGroups.values) {
@@ -466,10 +513,11 @@ BackupScheduleReport analyzeBackupSchedule(
                     latest.difference(first).inMilliseconds ~/
                     (backupEvents.length - 1),
               );
-        final parts = entry.key.split('/');
+        final parts = _parseBackupKey(entry.key);
         return BackupScheduleItem(
-          backupType: parts.first,
-          backupId: parts.length > 1 ? parts[1] : '',
+          namespace: parts.namespace,
+          backupType: parts.backupType,
+          backupId: parts.backupId,
           count: backupEvents.length,
           typicalHour: _mostCommon(hourCounts),
           weekdayCounts: weekdayCounts,
@@ -521,11 +569,13 @@ List<Map<String, Object?>> _uniqueSnapshotsByBackupTime(
 
 class _BackupCalendarEventGroup {
   _BackupCalendarEventGroup({
+    required this.namespace,
     required this.backupType,
     required this.backupId,
     required this.backupAt,
   });
 
+  final String namespace;
   final String backupType;
   final String backupId;
   final DateTime backupAt;
@@ -543,6 +593,7 @@ class _BackupCalendarEventGroup {
 
   BackupCalendarEntry toEntry() {
     return BackupCalendarEntry(
+      namespace: namespace,
       backupType: backupType,
       backupId: backupId,
       backupAt: backupAt,
@@ -569,11 +620,13 @@ BackupCoverageReport analyzeBackupCoverage(
     final time = snapshotTime(snapshot);
     final day = DateTime(time.year, time.month, time.day);
     byDay[day] = (byDay[day] ?? 0) + 1;
-    byGuest.putIfAbsent(
-      '$backupType/$backupId',
-      () => <Map<String, Object?>>[],
+    final guestKey = _backupKey(
+      snapshotNamespace(snapshot),
+      backupType,
+      backupId,
     );
-    byGuest['$backupType/$backupId']!.add(snapshot);
+    byGuest.putIfAbsent(guestKey, () => <Map<String, Object?>>[]);
+    byGuest[guestKey]!.add(snapshot);
     totalSizeBytes += _snapshotSize(snapshot);
   }
 
@@ -591,10 +644,11 @@ BackupCoverageReport analyzeBackupCoverage(
                     latest.difference(first).inMilliseconds ~/
                     (snapshots.length - 1),
               );
-        final parts = entry.key.split('/');
+        final parts = _parseBackupKey(entry.key);
         return BackupGuestReport(
-          backupType: parts.first,
-          backupId: parts.length > 1 ? parts[1] : '',
+          namespace: parts.namespace,
+          backupType: parts.backupType,
+          backupId: parts.backupId,
           datastores: snapshots
               .map((snapshot) => snapshot['datastore']?.toString() ?? '')
               .where((datastore) => datastore.isNotEmpty)
@@ -637,12 +691,21 @@ GuestBackupSummary analyzeGuestBackups({
   required String vmid,
   required List<Map<String, Object?>> snapshots,
   String guestName = '',
+  String backupNamespace = '',
+  Iterable<String>? backupNamespaces,
   DateTime? now,
 }) {
   final expectedBackupType = guestType == 'lxc' ? 'ct' : 'vm';
+  final expectedNamespaces = (backupNamespaces ?? <String>[backupNamespace])
+      .map((namespace) => namespace.trim())
+      .toSet();
+  if (expectedNamespaces.isEmpty) {
+    expectedNamespaces.add('');
+  }
   final idMatches = snapshots.where((snapshot) {
     return snapshot['backup-id']?.toString() == vmid &&
-        snapshot['backup-type']?.toString() == expectedBackupType;
+        snapshot['backup-type']?.toString() == expectedBackupType &&
+        expectedNamespaces.contains(snapshotNamespace(snapshot));
   }).toList();
 
   final normalizedGuestName = _normalizeName(guestName);
@@ -699,6 +762,73 @@ GuestBackupSummary analyzeGuestBackups({
   );
 }
 
+List<BackupNamespaceGap> analyzeRootNamespaceGaps({
+  required List<Map<String, Object?>> guests,
+  required List<Map<String, Object?>> snapshots,
+}) {
+  final gaps = <BackupNamespaceGap>[];
+  for (final guest in guests.where((guest) {
+    return guest['type'] == 'qemu' || guest['type'] == 'lxc';
+  })) {
+    final expectedNamespaces = _guestBackupNamespaces(
+      guest,
+    ).where((namespace) => namespace.isNotEmpty).toSet();
+    if (expectedNamespaces.isEmpty) {
+      continue;
+    }
+
+    final guestType = guest['type']?.toString() ?? '';
+    final vmid = guest['vmid']?.toString() ?? '';
+    final guestName = guest['name']?.toString() ?? '';
+    final expectedSummary = analyzeGuestBackups(
+      guestType: guestType,
+      vmid: vmid,
+      guestName: guestName,
+      backupNamespaces: expectedNamespaces,
+      snapshots: snapshots,
+    );
+    if (expectedSummary.matches.isNotEmpty) {
+      continue;
+    }
+
+    final rootSummary = analyzeGuestBackups(
+      guestType: guestType,
+      vmid: vmid,
+      guestName: guestName,
+      backupNamespaces: const <String>[''],
+      snapshots: snapshots,
+    );
+    if (rootSummary.matches.isEmpty) {
+      continue;
+    }
+
+    gaps.add(
+      BackupNamespaceGap(
+        sourceId: guest['sourceId']?.toString() ?? '',
+        sourceName: guest['source']?.toString() ?? '',
+        node: guest['node']?.toString() ?? '',
+        guestType: guestType,
+        vmid: vmid,
+        name: guestName,
+        expectedNamespaces: expectedNamespaces,
+        rootLatestBackupAt: rootSummary.latestBackupAt,
+        rootBackupCount: rootSummary.matches.length,
+      ),
+    );
+  }
+
+  gaps.sort((a, b) {
+    final latestCompare = (a.rootLatestBackupAt ?? DateTime(0)).compareTo(
+      b.rootLatestBackupAt ?? DateTime(0),
+    );
+    if (latestCompare != 0) {
+      return latestCompare;
+    }
+    return a.displayName.compareTo(b.displayName);
+  });
+  return gaps;
+}
+
 String backupStatusLabel(BackupAgeStatus status) {
   return switch (status) {
     BackupAgeStatus.ok => 'ok',
@@ -722,7 +852,7 @@ String backupMatchDescription(BackupMatchQuality quality) {
     BackupMatchQuality.nameConfirmed =>
       'Backup подтвержден по VMID и имени VM/LXC в PBS notes.',
     BackupMatchQuality.idOnly =>
-      'Backup сопоставлен только по VMID. Если в разных кластерах есть одинаковые VMID, проверьте PBS notes/datastore policy.',
+      'Backup сопоставлен по PBS namespace и VMID. Для одинаковых VMID в разных кластерах namespace должен быть задан в источнике PVE.',
     BackupMatchQuality.nameMismatch =>
       'Найден snapshot с таким VMID, но PBS notes указывают другое имя VM/LXC. Backup не засчитан, чтобы не смешать разные кластеры.',
   };
@@ -741,6 +871,82 @@ DateTime snapshotTime(Map<String, Object?> snapshot) {
   }
   final parsed = DateTime.tryParse(value?.toString() ?? '');
   return parsed?.toUtc() ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+}
+
+String snapshotNamespace(Map<String, Object?> snapshot) {
+  for (final key in <String>['namespace', 'ns', 'backup-ns']) {
+    final value = snapshot[key]?.toString().trim() ?? '';
+    if (value.isNotEmpty && value != '/') {
+      return value;
+    }
+  }
+  return '';
+}
+
+Set<String> backupNamespacesFromStorageConfig(
+  List<Map<String, Object?>> storageConfig, {
+  String manualNamespace = '',
+}) {
+  final namespaces = <String>{};
+  final manual = manualNamespace.trim();
+  if (manual.isNotEmpty) {
+    namespaces.add(manual);
+  }
+  for (final storage in storageConfig) {
+    final type = storage['type']?.toString().toLowerCase() ?? '';
+    final plugin = storage['plugintype']?.toString().toLowerCase() ?? '';
+    final isPbs =
+        type == 'pbs' ||
+        plugin == 'pbs' ||
+        type == 'proxmox-backup' ||
+        plugin == 'proxmox-backup';
+    if (!isPbs) {
+      continue;
+    }
+    final namespace =
+        storage['namespace']?.toString() ??
+        storage['ns']?.toString() ??
+        storage['backup-ns']?.toString() ??
+        '';
+    final normalized = namespace.trim();
+    if (normalized.isNotEmpty && normalized != '/') {
+      namespaces.add(normalized);
+    }
+  }
+  return namespaces;
+}
+
+Set<String> guestBackupNamespaces(Map<String, Object?> guest) {
+  return _guestBackupNamespaces(guest);
+}
+
+Set<String> _guestBackupNamespaces(Map<String, Object?> guest) {
+  final rawNamespaces = guest['backupNamespaces'];
+  if (rawNamespaces is Iterable) {
+    final namespaces = rawNamespaces
+        .map((namespace) => namespace.toString().trim())
+        .where((namespace) => namespace.isNotEmpty)
+        .toSet();
+    return namespaces.isEmpty ? const <String>{''} : namespaces;
+  }
+
+  final namespace = guest['backupNamespace']?.toString().trim() ?? '';
+  return namespace.isEmpty ? const <String>{''} : <String>{namespace};
+}
+
+String _backupKey(String namespace, String backupType, String backupId) {
+  return '${namespace.trim()}\u0001$backupType\u0001$backupId';
+}
+
+({String namespace, String backupType, String backupId}) _parseBackupKey(
+  String key,
+) {
+  final parts = key.split('\u0001');
+  return (
+    namespace: parts.isNotEmpty ? parts[0] : '',
+    backupType: parts.length > 1 ? parts[1] : '',
+    backupId: parts.length > 2 ? parts[2] : '',
+  );
 }
 
 double _snapshotSize(Map<String, Object?> snapshot) {

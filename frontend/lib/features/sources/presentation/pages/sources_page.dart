@@ -144,6 +144,7 @@ class SourceDialog extends StatefulWidget {
 class _SourceDialogState extends State<SourceDialog> {
   late final TextEditingController nameController;
   late final TextEditingController urlController;
+  late final TextEditingController backupNamespaceController;
   final TextEditingController tokenController = TextEditingController();
   late String type;
   bool loading = false;
@@ -158,6 +159,9 @@ class _SourceDialogState extends State<SourceDialog> {
     final Source? source = widget.source;
     nameController = TextEditingController(text: source?.name ?? '');
     urlController = TextEditingController(text: source?.baseUrl ?? 'https://');
+    backupNamespaceController = TextEditingController(
+      text: source?.backupNamespace ?? '',
+    );
     type = source?.type ?? 'proxmox_ve';
   }
 
@@ -165,6 +169,7 @@ class _SourceDialogState extends State<SourceDialog> {
   void dispose() {
     nameController.dispose();
     urlController.dispose();
+    backupNamespaceController.dispose();
     tokenController.dispose();
     super.dispose();
   }
@@ -176,6 +181,9 @@ class _SourceDialogState extends State<SourceDialog> {
     });
 
     try {
+      final backupNamespace = type == 'proxmox_ve'
+          ? backupNamespaceController.text.trim()
+          : '';
       if (editing) {
         await context.read<SourcesCubit>().update(
           id: widget.source!.id,
@@ -183,6 +191,7 @@ class _SourceDialogState extends State<SourceDialog> {
           type: type,
           baseUrl: urlController.text.trim(),
           token: tokenController.text.trim(),
+          backupNamespace: backupNamespace,
         );
       } else {
         await context.read<SourcesCubit>().create(
@@ -190,6 +199,7 @@ class _SourceDialogState extends State<SourceDialog> {
           type: type,
           baseUrl: urlController.text.trim(),
           token: tokenController.text.trim(),
+          backupNamespace: backupNamespace,
         );
       }
       if (mounted) {
@@ -241,6 +251,15 @@ class _SourceDialogState extends State<SourceDialog> {
             const SizedBox(height: 12),
             AppTextField(controller: urlController, label: 'Base URL'),
             const SizedBox(height: 12),
+            if (type == 'proxmox_ve') ...<Widget>[
+              AppTextField(
+                controller: backupNamespaceController,
+                label: 'Backup namespace',
+                helperText:
+                    'PBS namespace этого PVE кластера. Пусто = root namespace.',
+              ),
+              const SizedBox(height: 12),
+            ],
             AppTextField(
               controller: tokenController,
               label: 'API token',

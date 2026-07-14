@@ -411,6 +411,8 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
       guestType: guestType,
       vmid: vmid,
       guestName: name,
+      backupNamespace: guest['backupNamespace']?.toString() ?? '',
+      backupNamespaces: guestBackupNamespaces(guest),
       snapshots: data.backupSnapshots,
     );
     if (status == 'running' &&

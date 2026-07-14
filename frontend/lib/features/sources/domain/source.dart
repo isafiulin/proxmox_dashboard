@@ -8,6 +8,7 @@ class Source extends Equatable {
     required this.baseUrl,
     required this.status,
     required this.hasToken,
+    this.backupNamespace = '',
   });
 
   factory Source.fromJson(Map<String, Object?> json) {
@@ -18,6 +19,7 @@ class Source extends Equatable {
       baseUrl: json['baseUrl'] as String,
       status: json['status'] as String,
       hasToken: json['hasToken'] as bool? ?? false,
+      backupNamespace: json['backupNamespace']?.toString() ?? '',
     );
   }
 
@@ -27,7 +29,16 @@ class Source extends Equatable {
   final String baseUrl;
   final String status;
   final bool hasToken;
+  final String backupNamespace;
 
   @override
-  List<Object?> get props => [id, name, type, baseUrl, status, hasToken];
+  List<Object?> get props => [
+    id,
+    name,
+    type,
+    baseUrl,
+    status,
+    hasToken,
+    backupNamespace,
+  ];
 }

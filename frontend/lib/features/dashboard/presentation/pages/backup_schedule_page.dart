@@ -73,6 +73,13 @@ class BackupSchedulePage extends StatelessWidget {
 
     for (final source in pveSources) {
       final data = await repository.loadProxmoxVe(source.id);
+      final backupNamespaces = backupNamespacesFromStorageConfig(
+        data.storageConfig,
+        manualNamespace: source.backupNamespace,
+      );
+      final effectiveNamespaces = backupNamespaces.isEmpty
+          ? const <String>{''}
+          : backupNamespaces;
       for (final guest in data.vmResources.where(_isGuest)) {
         final guestType = guest['type']?.toString() ?? '';
         final backupType = guestType == 'lxc' ? 'ct' : 'vm';
@@ -80,14 +87,17 @@ class BackupSchedulePage extends StatelessWidget {
         if (vmid.isEmpty) {
           continue;
         }
-        targets['$backupType/$vmid'] = _ScheduleTarget(
-          sourceId: source.id,
-          sourceName: source.name,
-          node: guest['node']?.toString() ?? '',
-          guestType: guestType,
-          vmid: vmid,
-          name: guest['name']?.toString() ?? '',
-        );
+        for (final namespace in effectiveNamespaces) {
+          targets[_scheduleKey(namespace, backupType, vmid)] = _ScheduleTarget(
+            sourceId: source.id,
+            sourceName: source.name,
+            backupNamespace: namespace,
+            node: guest['node']?.toString() ?? '',
+            guestType: guestType,
+            vmid: vmid,
+            name: guest['name']?.toString() ?? '',
+          );
+        }
       }
     }
 
@@ -571,13 +581,18 @@ class _DayBackupList extends StatelessWidget {
           )
         else
           ...sortedEntries.map((entry) {
-            final target = targets[entry.displayName];
+            final target =
+                targets[_scheduleKey(
+                  entry.namespace,
+                  entry.backupType,
+                  entry.backupId,
+                )];
             final title = target == null || target.name.isEmpty
                 ? entry.displayName
                 : target.name;
             final location = target == null
-                ? entry.displayName
-                : '${entry.displayName} · ${target.sourceName} / ${target.node}';
+                ? _backupLabel(entry.displayName, entry.namespace)
+                : '${_backupLabel(entry.displayName, entry.namespace)} · ${target.sourceName} / ${target.node}';
             return ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
@@ -655,24 +670,29 @@ class _ScheduleTable extends StatelessWidget {
                         compareText(left.displayName, right.displayName),
                   ),
                   SortableDataColumn<BackupScheduleItem>(
+                    label: 'namespace',
+                    compare: (left, right) =>
+                        compareText(left.namespace, right.namespace),
+                  ),
+                  SortableDataColumn<BackupScheduleItem>(
                     label: 'name',
                     compare: (left, right) => compareText(
-                      targets[left.displayName]?.name ?? '',
-                      targets[right.displayName]?.name ?? '',
+                      targets[_itemKey(left)]?.name ?? '',
+                      targets[_itemKey(right)]?.name ?? '',
                     ),
                   ),
                   SortableDataColumn<BackupScheduleItem>(
                     label: 'cluster',
                     compare: (left, right) => compareText(
-                      targets[left.displayName]?.sourceName ?? '',
-                      targets[right.displayName]?.sourceName ?? '',
+                      targets[_itemKey(left)]?.sourceName ?? '',
+                      targets[_itemKey(right)]?.sourceName ?? '',
                     ),
                   ),
                   SortableDataColumn<BackupScheduleItem>(
                     label: 'node',
                     compare: (left, right) => compareText(
-                      targets[left.displayName]?.node ?? '',
-                      targets[right.displayName]?.node ?? '',
+                      targets[_itemKey(left)]?.node ?? '',
+                      targets[_itemKey(right)]?.node ?? '',
                     ),
                   ),
                   SortableDataColumn<BackupScheduleItem>(
@@ -715,7 +735,7 @@ class _ScheduleTable extends StatelessWidget {
                   ),
                 ],
                 rowBuilder: (context, item) {
-                  final target = targets[item.displayName];
+                  final target = targets[_itemKey(item)];
                   return DataRow(
                     onSelectChanged: target == null
                         ? null
@@ -731,7 +751,10 @@ class _ScheduleTable extends StatelessWidget {
                             );
                           },
                     cells: <DataCell>[
-                      DataCell(Text(item.displayName)),
+                      DataCell(
+                        Text(_backupLabel(item.displayName, item.namespace)),
+                      ),
+                      DataCell(Text(_namespaceLabel(item.namespace))),
                       DataCell(Text(target?.name ?? '-')),
                       DataCell(Text(target?.sourceName ?? '-')),
                       DataCell(Text(target?.node ?? '-')),
@@ -782,6 +805,7 @@ class _ScheduleTarget {
   const _ScheduleTarget({
     required this.sourceId,
     required this.sourceName,
+    required this.backupNamespace,
     required this.node,
     required this.guestType,
     required this.vmid,
@@ -790,6 +814,7 @@ class _ScheduleTarget {
 
   final String sourceId;
   final String sourceName;
+  final String backupNamespace;
   final String node;
   final String guestType;
   final String vmid;
@@ -798,6 +823,9 @@ class _ScheduleTarget {
 
 class _CalendarEvent {
   const _CalendarEvent({
+    required this.namespace,
+    required this.backupType,
+    required this.backupId,
     required this.displayName,
     required this.backupAt,
     required this.backupSource,
@@ -807,6 +835,9 @@ class _CalendarEvent {
 
   factory _CalendarEvent.actual(BackupCalendarEntry entry) {
     return _CalendarEvent(
+      namespace: entry.namespace,
+      backupType: entry.backupType,
+      backupId: entry.backupId,
       displayName: entry.displayName,
       backupAt: entry.backupAt,
       backupSource: entry.backupSource,
@@ -820,6 +851,9 @@ class _CalendarEvent {
     required DateTime day,
   }) {
     return _CalendarEvent(
+      namespace: item.namespace,
+      backupType: item.backupType,
+      backupId: item.backupId,
       displayName: item.displayName,
       backupAt: DateTime(day.year, day.month, day.day, item.typicalHour),
       backupSource: '',
@@ -828,6 +862,9 @@ class _CalendarEvent {
     );
   }
 
+  final String namespace;
+  final String backupType;
+  final String backupId;
   final String displayName;
   final DateTime backupAt;
   final String backupSource;
@@ -837,6 +874,22 @@ class _CalendarEvent {
 
 bool _isGuest(Map<String, Object?> item) {
   return item['type'] == 'qemu' || item['type'] == 'lxc';
+}
+
+String _scheduleKey(String namespace, String backupType, String backupId) {
+  return '${namespace.trim()}\u0001$backupType\u0001$backupId';
+}
+
+String _itemKey(BackupScheduleItem item) {
+  return _scheduleKey(item.namespace, item.backupType, item.backupId);
+}
+
+String _backupLabel(String displayName, String namespace) {
+  return namespace.isEmpty ? displayName : '$namespace / $displayName';
+}
+
+String _namespaceLabel(String namespace) {
+  return namespace.isEmpty ? 'root' : namespace;
 }
 
 Map<DateTime, List<_CalendarEvent>> _eventsByDay({

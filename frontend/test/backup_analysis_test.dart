@@ -103,6 +103,98 @@ void main() {
     },
   );
 
+  test('separates identical vmids by PBS namespace', () {
+    final now = DateTime.utc(2026, 6, 5, 12);
+    final snapshots = <Map<String, Object?>>[
+      <String, Object?>{
+        'namespace': 'cluster-a',
+        'backup-type': 'vm',
+        'backup-id': '100',
+        'backup-time': now.subtract(const Duration(hours: 2)).secondsSinceEpoch,
+        'comment': 'Middleware A',
+      },
+      <String, Object?>{
+        'namespace': 'cluster-b',
+        'backup-type': 'vm',
+        'backup-id': '100',
+        'backup-time': now.subtract(const Duration(hours: 3)).secondsSinceEpoch,
+        'comment': 'Middleware B',
+      },
+    ];
+
+    final clusterA = analyzeGuestBackups(
+      guestType: 'qemu',
+      vmid: '100',
+      backupNamespace: 'cluster-a',
+      now: now,
+      snapshots: snapshots,
+    );
+    final clusterB = analyzeGuestBackups(
+      guestType: 'qemu',
+      vmid: '100',
+      backupNamespace: 'cluster-b',
+      now: now,
+      snapshots: snapshots,
+    );
+
+    expect(clusterA.matches, hasLength(1));
+    expect(clusterA.matches.first['comment'], 'Middleware A');
+    expect(clusterB.matches, hasLength(1));
+    expect(clusterB.matches.first['comment'], 'Middleware B');
+  });
+
+  test('extracts pbs namespaces from PVE storage config', () {
+    final namespaces = backupNamespacesFromStorageConfig(
+      const <Map<String, Object?>>[
+        <String, Object?>{'storage': 'local', 'type': 'dir'},
+        <String, Object?>{
+          'storage': 'BackUpPBS',
+          'type': 'pbs',
+          'datastore': 'BackUpPBS',
+          'namespace': 'cluster-a',
+        },
+        <String, Object?>{
+          'storage': 'ReservePBS',
+          'plugintype': 'pbs',
+          'ns': 'cluster-b',
+        },
+      ],
+      manualNamespace: 'manual-cluster',
+    );
+
+    expect(namespaces, <String>{'manual-cluster', 'cluster-a', 'cluster-b'});
+  });
+
+  test('reports root backups missing from expected namespace', () {
+    final now = DateTime.utc(2026, 6, 5, 12);
+    final gaps = analyzeRootNamespaceGaps(
+      guests: const <Map<String, Object?>>[
+        <String, Object?>{
+          'source': 'cluster-a',
+          'sourceId': 'pve-a',
+          'node': 'node-a',
+          'type': 'qemu',
+          'vmid': '100',
+          'name': 'Middleware',
+          'backupNamespaces': <String>['cluster-a'],
+        },
+      ],
+      snapshots: <Map<String, Object?>>[
+        <String, Object?>{
+          'backup-type': 'vm',
+          'backup-id': '100',
+          'backup-time': now.secondsSinceEpoch,
+          'comment': 'Middleware',
+        },
+      ],
+    );
+
+    expect(gaps, hasLength(1));
+    expect(gaps.single.expectedNamespaces, <String>{'cluster-a'});
+    expect(gaps.single.rootBackupCount, 1);
+    expect(gaps.single.rootLatestBackupAt, now);
+  });
+
   test('builds backup coverage report by guest and day', () {
     final first = DateTime.utc(2026, 6, 4, 1);
     final second = DateTime.utc(2026, 6, 5, 1);
@@ -200,6 +292,40 @@ void main() {
     expect(vmSchedule.datastores, <String>{'pbs-main', 'pbs-reserve'});
   });
 
+  test('does not merge schedule rows for identical vmids in namespaces', () {
+    final now = DateTime(2026, 6, 7, 12);
+    final first = DateTime.utc(2026, 6, 5, 2);
+    final second = DateTime.utc(2026, 6, 5, 3);
+
+    final report = analyzeBackupSchedule(
+      <Map<String, Object?>>[
+        <String, Object?>{
+          'namespace': 'cluster-a',
+          'backup-type': 'vm',
+          'backup-id': '100',
+          'backup-time': first.secondsSinceEpoch,
+          'datastore': 'pbs-main',
+        },
+        <String, Object?>{
+          'namespace': 'cluster-b',
+          'backup-type': 'vm',
+          'backup-id': '100',
+          'backup-time': second.secondsSinceEpoch,
+          'datastore': 'pbs-main',
+        },
+      ],
+      now: now,
+      days: 3,
+    );
+
+    expect(report.items, hasLength(2));
+    expect(
+      report.items.map((item) => '${item.namespace}/${item.displayName}'),
+      containsAll(<String>['cluster-a/vm/100', 'cluster-b/vm/100']),
+    );
+    expect(report.calendarEntries, hasLength(2));
+  });
+
   test('detects backup groups without deployed VM match', () {
     final now = DateTime.utc(2026, 6, 5, 3);
     final report = analyzeMissingBackupGuests(
@@ -211,6 +337,7 @@ void main() {
           'type': 'qemu',
           'vmid': '100',
           'name': 'Middleware',
+          'backupNamespace': 'cluster-a',
         },
         <String, Object?>{
           'source': 'cluster-b',
@@ -219,10 +346,12 @@ void main() {
           'type': 'qemu',
           'vmid': '210',
           'name': 'Windows10forchinanms',
+          'backupNamespace': 'cluster-b',
         },
       ],
       snapshots: <Map<String, Object?>>[
         <String, Object?>{
+          'namespace': 'cluster-a',
           'backupSource': 'PBS-1',
           'datastore': 'pbs-main',
           'backup-type': 'vm',
@@ -232,6 +361,7 @@ void main() {
           'size': 1024,
         },
         <String, Object?>{
+          'namespace': 'cluster-a',
           'backupSource': 'PBS-1',
           'datastore': 'pbs-main',
           'backup-type': 'vm',

@@ -29,6 +29,7 @@ class SourcesService {
     required String type,
     required String baseUrl,
     required String token,
+    String backupNamespace = '',
   }) async {
     final normalizedName = name.trim();
     final normalizedUrl = baseUrl.trim();
@@ -42,6 +43,7 @@ class SourcesService {
         name: normalizedName,
         type: type,
         baseUrl: normalizedUrl,
+        backupNamespace: backupNamespace.trim(),
         credential: await _credentialsCipher.encrypt(token.trim()));
     _store.sources.add(source);
     _audit.record('source.create',
@@ -57,6 +59,7 @@ class SourcesService {
     String? type,
     String? baseUrl,
     String? token,
+    String? backupNamespace,
   }) async {
     final source = byId(sourceId);
     if (source == null) throw const SourceInputException('source_not_found');
@@ -76,6 +79,9 @@ class SourcesService {
     }
     if (token != null && token.trim().isNotEmpty) {
       source.credential = await _credentialsCipher.encrypt(token.trim());
+    }
+    if (backupNamespace != null) {
+      source.backupNamespace = backupNamespace.trim();
     }
 
     source.updatedAt = DateTime.now().toUtc();

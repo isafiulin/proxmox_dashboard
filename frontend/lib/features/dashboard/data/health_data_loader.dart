@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
+import 'package:frontend/features/sources/domain/backup_analysis.dart';
 import 'package:frontend/features/sources/domain/source.dart';
 
 class HealthRuntimeData {
@@ -38,6 +39,13 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
     try {
       if (source.type == 'proxmox_ve') {
         final data = await repository.loadProxmoxVe(source.id);
+        final backupNamespaces = backupNamespacesFromStorageConfig(
+          data.storageConfig,
+          manualNamespace: source.backupNamespace,
+        );
+        final effectiveBackupNamespaces = backupNamespaces.isEmpty
+            ? <String>[source.backupNamespace]
+            : backupNamespaces.toList();
         nodes.addAll(
           data.nodes.map(
             (node) => <String, Object?>{
@@ -52,6 +60,8 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
             (guest) => <String, Object?>{
               'source': source.name,
               'sourceId': source.id,
+              'backupNamespace': source.backupNamespace,
+              'backupNamespaces': effectiveBackupNamespaces,
               ...guest,
             },
           ),

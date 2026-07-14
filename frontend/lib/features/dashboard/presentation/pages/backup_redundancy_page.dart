@@ -78,6 +78,13 @@ class BackupRedundancyPage extends StatelessWidget {
     var totalGuests = 0;
     for (final source in pveSources) {
       final data = await repository.loadProxmoxVe(source.id);
+      final expectedNamespaces = backupNamespacesFromStorageConfig(
+        data.storageConfig,
+        manualNamespace: source.backupNamespace,
+      );
+      final effectiveNamespaces = expectedNamespaces.isEmpty
+          ? const <String>{''}
+          : expectedNamespaces;
       for (final guest in data.vmResources.where(_isGuest)) {
         totalGuests += 1;
         final guestType = guest['type']?.toString() ?? '';
@@ -85,7 +92,8 @@ class BackupRedundancyPage extends StatelessWidget {
         final expectedBackupType = guestType == 'lxc' ? 'ct' : 'vm';
         final guestSnapshots = snapshots.where((snapshot) {
           return snapshot['backup-type']?.toString() == expectedBackupType &&
-              snapshot['backup-id']?.toString() == vmid;
+              snapshot['backup-id']?.toString() == vmid &&
+              effectiveNamespaces.contains(snapshotNamespace(snapshot));
         }).toList();
         final backupSources = guestSnapshots
             .map((snapshot) => snapshot['backupSource']?.toString() ?? '')
@@ -95,12 +103,14 @@ class BackupRedundancyPage extends StatelessWidget {
             .map((snapshot) {
               final sourceName = snapshot['backupSource']?.toString() ?? '';
               final datastore = snapshot['datastore']?.toString() ?? '';
+              final namespace = snapshotNamespace(snapshot);
               if (sourceName.isEmpty && datastore.isEmpty) {
                 return '';
               }
-              return datastore.isEmpty
+              final base = datastore.isEmpty
                   ? sourceName
                   : '$sourceName / $datastore';
+              return namespace.isEmpty ? base : '$base / $namespace';
             })
             .where((location) => location.isNotEmpty)
             .toSet();
@@ -111,6 +121,7 @@ class BackupRedundancyPage extends StatelessWidget {
           guestType: guestType,
           vmid: vmid,
           guestName: guest['name']?.toString() ?? '',
+          backupNamespaces: effectiveNamespaces,
           snapshots: snapshots,
         );
         issues.add(

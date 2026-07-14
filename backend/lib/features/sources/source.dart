@@ -11,6 +11,7 @@ class Source {
     required this.status,
     required this.createdAt,
     required this.updatedAt,
+    this.backupNamespace = '',
     this.lastSeenAt,
   });
 
@@ -19,6 +20,7 @@ class Source {
     required String type,
     required String baseUrl,
     required EncryptedSecret credential,
+    String backupNamespace = '',
   }) {
     final now = DateTime.now().toUtc();
     return Source(
@@ -27,6 +29,7 @@ class Source {
       type: type,
       baseUrl: baseUrl,
       credential: credential,
+      backupNamespace: backupNamespace,
       status: 'new',
       createdAt: now,
       updatedAt: now,
@@ -47,6 +50,7 @@ class Source {
         mac: (json['credentialMac'] ?? json['tokenMac'] ?? '') as String,
       ),
       status: json['status'] as String,
+      backupNamespace: json['backupNamespace']?.toString() ?? '',
       createdAt: _dateTimeFromJson(json['createdAt']!),
       updatedAt: _dateTimeFromJson(json['updatedAt']!),
       lastSeenAt: json['lastSeenAt'] == null
@@ -63,6 +67,7 @@ class Source {
   String type;
   String baseUrl;
   EncryptedSecret credential;
+  String backupNamespace;
   String status;
   final DateTime createdAt;
   DateTime updatedAt;
@@ -75,6 +80,7 @@ class Source {
         'name': name,
         'type': type,
         'baseUrl': baseUrl,
+        'backupNamespace': backupNamespace,
         'status': status,
         'hasToken': hasToken,
         'lastSeenAt': lastSeenAt?.toIso8601String(),

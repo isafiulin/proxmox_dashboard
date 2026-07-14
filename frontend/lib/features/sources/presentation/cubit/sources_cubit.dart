@@ -39,12 +39,14 @@ class SourcesCubit extends Cubit<SourcesState> {
     required String type,
     required String baseUrl,
     required String token,
+    required String backupNamespace,
   }) async {
     await _repository.create(
       name: name,
       type: type,
       baseUrl: baseUrl,
       token: token,
+      backupNamespace: backupNamespace,
     );
     await load();
   }
@@ -61,6 +63,7 @@ class SourcesCubit extends Cubit<SourcesState> {
     required String type,
     required String baseUrl,
     required String token,
+    required String backupNamespace,
   }) async {
     await _repository.update(
       id: id,
@@ -68,6 +71,7 @@ class SourcesCubit extends Cubit<SourcesState> {
       type: type,
       baseUrl: baseUrl,
       token: token,
+      backupNamespace: backupNamespace,
     );
     await load();
   }

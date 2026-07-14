@@ -305,6 +305,7 @@ class App {
         type: body['type'] as String? ?? '',
         baseUrl: body['baseUrl'] as String? ?? '',
         token: body['token'] as String? ?? '',
+        backupNamespace: body['backupNamespace'] as String? ?? '',
       );
       return sendJson(request, {'source': source.toPublicJson()},
           statusCode: HttpStatus.created);
@@ -333,6 +334,7 @@ class App {
         type: body['type'] as String?,
         baseUrl: body['baseUrl'] as String?,
         token: body['token'] as String?,
+        backupNamespace: body['backupNamespace'] as String?,
       );
       return sendJson(request, {'source': source.toPublicJson()});
     }
@@ -363,7 +365,7 @@ class App {
     }
 
     final veRoute = RegExp(
-      r'^/api/proxmox-ve/([^/]+)/(nodes|resources|node-resources|vm-resources|storage-resources|node-statuses|node-guests|node-storage|tasks)$',
+      r'^/api/proxmox-ve/([^/]+)/(nodes|resources|node-resources|vm-resources|storage-resources|storage-config|node-statuses|node-guests|node-storage|tasks)$',
     ).firstMatch(path);
     if (veRoute != null && method == 'GET') {
       final String sourceId = veRoute.group(1)!;
@@ -376,6 +378,9 @@ class App {
         'vm-resources' => await infrastructure.proxmoxVeVmResources(sourceId),
         'storage-resources' =>
           await infrastructure.proxmoxVeStorageResources(sourceId),
+        'storage-config' => await infrastructure.proxmoxVeStorageConfig(
+            sourceId,
+          ),
         'node-statuses' => await infrastructure.proxmoxVeNodeStatuses(sourceId),
         'node-guests' => await infrastructure.proxmoxVeNodeGuests(sourceId),
         'node-storage' => await infrastructure.proxmoxVeNodeStorage(sourceId),
@@ -445,13 +450,27 @@ class App {
     }
 
     final pbsSnapshotsRoute = RegExp(
-      r'^/api/proxmox-backup/([^/]+)/datastores/([^/]+)/snapshots$',
+      r'^/api/proxmox-backup/([^/]+)/datastores/([^/]+)/(namespaces|snapshots)$',
     ).firstMatch(path);
     if (pbsSnapshotsRoute != null && method == 'GET') {
+      final sourceId = pbsSnapshotsRoute.group(1)!;
+      final datastore = Uri.decodeComponent(pbsSnapshotsRoute.group(2)!);
+      final action = pbsSnapshotsRoute.group(3)!;
+      if (action == 'namespaces') {
+        return sendJson(request, {
+          'data': await infrastructure.proxmoxBackupNamespaces(
+            sourceId,
+            datastore,
+          ),
+        });
+      }
       return sendJson(request, {
         'data': await infrastructure.proxmoxBackupSnapshots(
-          pbsSnapshotsRoute.group(1)!,
-          Uri.decodeComponent(pbsSnapshotsRoute.group(2)!),
+          sourceId,
+          datastore,
+          namespace: request.uri.queryParameters['namespace'] ??
+              request.uri.queryParameters['ns'] ??
+              '',
         ),
       });
     }

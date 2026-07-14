@@ -85,6 +85,14 @@ class GuestDetailPage extends StatelessWidget {
     List<Source> sources,
   ) async {
     final repository = SourceDataRepository(context.read<ApiClient>());
+    final currentSource = sources
+        .where((Source source) => source.id == sourceId)
+        .firstOrNull;
+    final storageConfig = await repository.loadStorageConfig(sourceId);
+    final backupNamespaces = backupNamespacesFromStorageConfig(
+      storageConfig,
+      manualNamespace: currentSource?.backupNamespace ?? '',
+    );
     final status = await repository.loadGuestStatus(
       sourceId: sourceId,
       node: node,
@@ -118,6 +126,8 @@ class GuestDetailPage extends StatelessWidget {
         guestType: guestType,
         vmid: vmid,
         guestName: name,
+        backupNamespace: currentSource?.backupNamespace ?? '',
+        backupNamespaces: backupNamespaces.isEmpty ? null : backupNamespaces,
         snapshots: snapshots,
       ),
     );
@@ -346,6 +356,7 @@ class _BackupSummaryCard extends StatelessWidget {
           preferredColumns: const <String>[
             'backupSource',
             'datastore',
+            'namespace',
             'backup-type',
             'backup-id',
             'backup-time',
