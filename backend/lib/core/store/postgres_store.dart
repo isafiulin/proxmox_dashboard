@@ -158,6 +158,16 @@ class PostgresStore implements AppStore {
     });
   }
 
+  @override
+  Future<bool> checkHealth() async {
+    try {
+      await _connection.execute('SELECT 1');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> close() => _connection.close();
 
   Future<void> _migrate() async {

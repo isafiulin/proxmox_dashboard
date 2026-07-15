@@ -91,6 +91,29 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
             },
           ),
         );
+        tasks.addAll(
+          data.tasks.map(
+            (task) => <String, Object?>{
+              'source': source.name,
+              'sourceId': source.id,
+              'sourceType': source.type,
+              ...task,
+            },
+          ),
+        );
+        storageResources.addAll(
+          data.datastoreUsage.map(
+            (storage) => <String, Object?>{
+              'source': source.name,
+              'sourceId': source.id,
+              'node': 'PBS',
+              'storage': storage['store'] ?? storage['name'],
+              'disk': storage['used'],
+              'maxdisk': storage['total'],
+              ...storage,
+            },
+          ),
+        );
       }
     } catch (error) {
       errors.add(<String, Object?>{

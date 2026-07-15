@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:frontend/core/api/api_client.dart';
 import 'package:frontend/core/design/app_breakpoints.dart';
 import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/core/design/app_spacing.dart';
@@ -47,6 +48,35 @@ class _DashboardFrameState extends State<_DashboardFrame> {
   bool _collapsed = false;
   Timer? _refreshTimer;
   int? _currentRefreshMinutes;
+  DateTime? _lastRefreshedAt;
+  bool _refreshing = false;
+  bool _versionRequested = false;
+  _AppVersionInfo? _versionInfo;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncRefreshTimer(
+      context.read<SettingsCubit>().state.settings.collectionIntervalMinutes,
+    );
+    if (!_versionRequested) {
+      _versionRequested = true;
+      unawaited(_loadVersionInfo());
+    }
+  }
+
+  Future<void> _loadVersionInfo() async {
+    try {
+      final json = await context.read<ApiClient>().get('/health');
+      if (mounted) {
+        setState(() => _versionInfo = _AppVersionInfo.fromJson(json));
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _versionInfo = const _AppVersionInfo.unavailable());
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -64,8 +94,25 @@ class _DashboardFrameState extends State<_DashboardFrame> {
       if (!mounted) {
         return;
       }
-      _refreshAll(context);
+      unawaited(_runRefresh());
     });
+  }
+
+  Future<void> _runRefresh() async {
+    if (_refreshing) {
+      return;
+    }
+    setState(() => _refreshing = true);
+    try {
+      await _refreshAll(context);
+      if (mounted) {
+        setState(() => _lastRefreshedAt = DateTime.now());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _refreshing = false);
+      }
+    }
   }
 
   @override
@@ -85,6 +132,7 @@ class _DashboardFrameState extends State<_DashboardFrame> {
           final Widget navigation = _SidebarNavigation(
             location: widget.location,
             collapsed: collapsed,
+            versionInfo: _versionInfo,
             onNavigate: (String path) {
               if (compact) {
                 Navigator.of(context).pop();
@@ -107,6 +155,9 @@ class _DashboardFrameState extends State<_DashboardFrame> {
                       _TopBar(
                         title: _titleForLocation(widget.location),
                         compact: compact,
+                        refreshing: _refreshing,
+                        lastRefreshedAt: _lastRefreshedAt,
+                        onRefresh: _runRefresh,
                       ),
                       Expanded(
                         child: ScrollablePageFrame(
@@ -129,10 +180,19 @@ class _DashboardFrameState extends State<_DashboardFrame> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.compact});
+  const _TopBar({
+    required this.title,
+    required this.compact,
+    required this.refreshing,
+    required this.lastRefreshedAt,
+    required this.onRefresh,
+  });
 
   final String title;
   final bool compact;
+  final bool refreshing;
+  final DateTime? lastRefreshedAt;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -162,6 +222,17 @@ class _TopBar extends StatelessWidget {
           ],
           Text(title, style: Theme.of(context).textTheme.headlineSmall),
           const Spacer(),
+          if (!compact) ...<Widget>[
+            const Icon(Icons.circle, size: 8, color: AppColors.success),
+            const SizedBox(width: 6),
+            Text(
+              refreshing
+                  ? 'Обновление...'
+                  : 'Polling включен · ${_formatRefreshTime(lastRefreshedAt)}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(width: 16),
+          ],
           _RefreshIntervalSelector(
             minutes: settingsState.settings.collectionIntervalMinutes,
             onChanged: (int minutes) =>
@@ -170,8 +241,13 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 8),
           IconButton(
             tooltip: 'Обновить',
-            onPressed: () => _refreshAll(context),
-            icon: const Icon(Icons.refresh),
+            onPressed: refreshing ? null : onRefresh,
+            icon: refreshing
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
           ),
           const SizedBox(width: 12),
           if (!compact)
@@ -243,12 +319,14 @@ class _SidebarNavigation extends StatelessWidget {
   const _SidebarNavigation({
     required this.location,
     required this.collapsed,
+    required this.versionInfo,
     required this.onNavigate,
     required this.onToggle,
   });
 
   final String location;
   final bool collapsed;
+  final _AppVersionInfo? versionInfo;
   final ValueChanged<String> onNavigate;
   final VoidCallback? onToggle;
 
@@ -306,11 +384,81 @@ class _SidebarNavigation extends StatelessWidget {
               collapsed: collapsed,
               onTap: () {},
             ),
+            _VersionLabel(collapsed: collapsed, info: versionInfo),
+            const SizedBox(height: AppSpacing.sm),
           ],
         ),
       ),
     );
   }
+}
+
+class _VersionLabel extends StatelessWidget {
+  const _VersionLabel({required this.collapsed, required this.info});
+
+  final bool collapsed;
+  final _AppVersionInfo? info;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = info;
+    final text = value == null
+        ? 'Версия загружается...'
+        : 'Frontend ${value.frontendVersion}\n'
+              'Backend ${value.backendVersion}\n'
+              'Commit ${value.gitCommit}';
+    if (collapsed) {
+      return Tooltip(
+        message: text,
+        child: const Padding(
+          padding: EdgeInsets.all(AppSpacing.md),
+          child: Icon(
+            Icons.info_outline,
+            size: 18,
+            color: AppColors.sidebarMuted,
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: AppColors.sidebarMuted,
+          height: 1.45,
+        ),
+      ),
+    );
+  }
+}
+
+class _AppVersionInfo {
+  const _AppVersionInfo({
+    required this.frontendVersion,
+    required this.backendVersion,
+    required this.gitCommit,
+  });
+
+  const _AppVersionInfo.unavailable()
+    : frontendVersion = 'unknown',
+      backendVersion = 'unavailable',
+      gitCommit = 'unknown';
+
+  factory _AppVersionInfo.fromJson(Map<String, Object?> json) {
+    return _AppVersionInfo(
+      frontendVersion: json['frontendVersion']?.toString() ?? 'unknown',
+      backendVersion:
+          json['backendVersion']?.toString() ??
+          json['version']?.toString() ??
+          'unknown',
+      gitCommit: json['gitCommit']?.toString() ?? 'unknown',
+    );
+  }
+
+  final String frontendVersion;
+  final String backendVersion;
+  final String gitCommit;
 }
 
 class _SidebarItem extends StatelessWidget {
@@ -432,6 +580,11 @@ const List<_NavItem> _navItems = <_NavItem>[
     icon: Icons.calendar_month_outlined,
   ),
   _NavItem(
+    path: '/backup-policy',
+    label: 'Backup policy',
+    icon: Icons.policy_outlined,
+  ),
+  _NavItem(
     path: '/backup-redundancy',
     label: 'Backup redundancy',
     icon: Icons.security_outlined,
@@ -440,6 +593,16 @@ const List<_NavItem> _navItems = <_NavItem>[
     path: '/backup-missing-vm',
     label: 'Backup missing VM',
     icon: Icons.manage_search_outlined,
+  ),
+  _NavItem(
+    path: '/pbs-health',
+    label: 'PBS health',
+    icon: Icons.monitor_heart_outlined,
+  ),
+  _NavItem(
+    path: '/pbs-verify',
+    label: 'PBS verify state',
+    icon: Icons.fact_check_outlined,
   ),
   _NavItem(
     path: '/node-health',
@@ -452,17 +615,32 @@ const List<_NavItem> _navItems = <_NavItem>[
     icon: Icons.developer_board_outlined,
   ),
   _NavItem(path: '/search', label: 'Поиск', icon: Icons.search),
+  _NavItem(
+    path: '/collection-metrics',
+    label: 'Collection metrics',
+    icon: Icons.query_stats_outlined,
+  ),
   _NavItem(path: '/sources', label: 'Источники', icon: Icons.storage_outlined),
   _NavItem(path: '/users', label: 'Пользователи', icon: Icons.people_outline),
   _NavItem(path: '/audit', label: 'Аудит', icon: Icons.fact_check_outlined),
 ];
 
-void _refreshAll(BuildContext context) {
-  context.read<DashboardCubit>().load();
-  context.read<SourcesCubit>().load();
-  context.read<UsersCubit>().load();
-  context.read<AuditCubit>().load();
-  context.read<SnapshotsCubit>().load();
+Future<void> _refreshAll(BuildContext context) async {
+  await Future.wait(<Future<void>>[
+    context.read<DashboardCubit>().load(),
+    context.read<SourcesCubit>().load(),
+    context.read<UsersCubit>().load(),
+    context.read<AuditCubit>().load(),
+    context.read<SnapshotsCubit>().load(),
+  ]);
+}
+
+String _formatRefreshTime(DateTime? value) {
+  if (value == null) {
+    return 'ожидает первого обновления';
+  }
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
 }
 
 String _selectedPath(String location) {
@@ -472,11 +650,15 @@ String _selectedPath(String location) {
   return switch (location) {
     '/backup-health' => '/backup-health',
     '/backup-schedule' => '/backup-schedule',
+    '/backup-policy' => '/backup-policy',
     '/backup-redundancy' => '/backup-redundancy',
     '/backup-missing-vm' => '/backup-missing-vm',
+    '/pbs-health' => '/pbs-health',
+    '/pbs-verify' => '/pbs-verify',
     '/node-health' => '/node-health',
     '/vm-health' => '/vm-health',
     '/search' => '/search',
+    '/collection-metrics' => '/collection-metrics',
     '/users' => '/users',
     '/audit' => '/audit',
     _ => '/',
@@ -490,11 +672,15 @@ String _titleForLocation(String location) {
   return switch (location) {
     '/backup-health' => 'Backup health',
     '/backup-schedule' => 'Backup schedule',
+    '/backup-policy' => 'Backup policy',
     '/backup-redundancy' => 'Backup redundancy',
     '/backup-missing-vm' => 'Backup missing VM',
+    '/pbs-health' => 'PBS health',
+    '/pbs-verify' => 'PBS verify state',
     '/node-health' => 'Node health',
     '/vm-health' => 'VM health',
     '/search' => 'Поиск',
+    '/collection-metrics' => 'Collection metrics',
     '/sources' => 'Источники',
     '/users' => 'Пользователи',
     '/audit' => 'Аудит',

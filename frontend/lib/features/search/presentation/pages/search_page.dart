@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
+import 'package:frontend/features/sources/domain/backup_analysis.dart';
 import 'package:frontend/features/sources/domain/source.dart';
 import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
 import 'package:frontend/shared/widgets/app_card.dart';
@@ -22,6 +23,8 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   final TextEditingController _controller = TextEditingController();
   String _query = '';
+  String _sourcesKey = '';
+  Future<List<_SearchItem>>? _itemsFuture;
 
   @override
   void dispose() {
@@ -36,8 +39,13 @@ class _SearchPageState extends State<SearchPage> {
         if (state.status == SourcesStatus.loading && state.items.isEmpty) {
           return const LoadingStateView();
         }
+        final sourcesKey = identityHashCode(state.items).toString();
+        if (_itemsFuture == null || _sourcesKey != sourcesKey) {
+          _sourcesKey = sourcesKey;
+          _itemsFuture = _load(context, state.items);
+        }
         return FutureBuilder<List<_SearchItem>>(
-          future: _load(context, state.items),
+          future: _itemsFuture,
           builder:
               (
                 BuildContext context,
@@ -56,20 +64,32 @@ class _SearchPageState extends State<SearchPage> {
                 final guests = items
                     .where((item) => item.kind == _SearchKind.guest)
                     .toList();
+                final backups = items
+                    .where(
+                      (item) =>
+                          item.kind == _SearchKind.backupGroup ||
+                          item.kind == _SearchKind.orphanBackup,
+                    )
+                    .toList();
+                final sourceItems = items
+                    .where((item) => item.kind == _SearchKind.source)
+                    .toList();
                 return DefaultTabController(
-                  length: 3,
+                  length: 5,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       const PageHeader(
                         title: 'Поиск',
-                        subtitle: 'Быстрый поиск по всем нодам и VM/LXC',
+                        subtitle:
+                            'VM, node, source, backup group и orphan backup',
                       ),
                       const SizedBox(height: 16),
                       AppCard(
                         child: AppTextField(
                           controller: _controller,
-                          label: 'Нода, VM/LXC, VMID или source',
+                          label:
+                              'Имя, VMID, node, source, datastore, namespace',
                           prefixIcon: Icons.search,
                           onChanged: (String value) =>
                               setState(() => _query = value),
@@ -86,6 +106,8 @@ class _SearchPageState extends State<SearchPage> {
                                 Tab(text: 'Все (${items.length})'),
                                 Tab(text: 'Ноды (${nodes.length})'),
                                 Tab(text: 'VM/LXC (${guests.length})'),
+                                Tab(text: 'Backups (${backups.length})'),
+                                Tab(text: 'Sources (${sourceItems.length})'),
                               ],
                             ),
                             const SizedBox(height: 12),
@@ -96,6 +118,8 @@ class _SearchPageState extends State<SearchPage> {
                                   _SearchResults(items: items),
                                   _SearchResults(items: nodes),
                                   _SearchResults(items: guests),
+                                  _SearchResults(items: backups),
+                                  _SearchResults(items: sourceItems),
                                 ],
                               ),
                             ),
@@ -117,10 +141,28 @@ class _SearchPageState extends State<SearchPage> {
   ) async {
     final repository = SourceDataRepository(context.read<ApiClient>());
     final items = <_SearchItem>[];
+    final deployedGuests = <Map<String, Object?>>[];
+    for (final source in sources) {
+      items.add(
+        _SearchItem(
+          kind: _SearchKind.source,
+          sourceId: source.id,
+          sourceName: source.name,
+          node: '',
+          title: source.name,
+          subtitle: '${source.type} · ${source.baseUrl}',
+          status: source.status,
+        ),
+      );
+    }
     for (final source in sources.where(
       (Source item) => item.type == 'proxmox_ve',
     )) {
       final data = await repository.loadProxmoxVe(source.id);
+      final namespaces = backupNamespacesFromStorageConfig(
+        data.storageConfig,
+        manualNamespace: source.backupNamespace,
+      );
       for (final node in data.nodes) {
         final nodeName = node['node']?.toString() ?? '';
         if (nodeName.isEmpty) {
@@ -146,6 +188,12 @@ class _SearchPageState extends State<SearchPage> {
         if (guestType.isEmpty || vmid.isEmpty || node.isEmpty) {
           continue;
         }
+        deployedGuests.add(<String, Object?>{
+          ...guest,
+          'backupNamespaces': namespaces.isEmpty
+              ? <String>[source.backupNamespace]
+              : namespaces.toList(),
+        });
         items.add(
           _SearchItem(
             kind: _SearchKind.guest,
@@ -157,6 +205,41 @@ class _SearchPageState extends State<SearchPage> {
             title: name.isEmpty ? '$guestType/$vmid' : name,
             subtitle: '${source.name} · $node · $guestType/$vmid',
             status: guest['status']?.toString() ?? 'unknown',
+          ),
+        );
+      }
+    }
+    final seenBackupGroups = <String>{};
+    for (final source in sources.where(
+      (item) => item.type == 'proxmox_backup',
+    )) {
+      final data = await repository.loadProxmoxBackup(source.id);
+      for (final snapshot in data.snapshots) {
+        final type = snapshot['backup-type']?.toString() ?? '';
+        final id = snapshot['backup-id']?.toString() ?? '';
+        final datastore = snapshot['datastore']?.toString() ?? '';
+        final namespace = snapshotNamespace(snapshot);
+        final key =
+            '${source.id}\u0001$datastore\u0001$namespace\u0001$type\u0001$id';
+        if (type.isEmpty || id.isEmpty || !seenBackupGroups.add(key)) {
+          continue;
+        }
+        final deployed = deployedGuests.any((guest) {
+          final guestType = guest['type'] == 'lxc' ? 'ct' : 'vm';
+          return guestType == type &&
+              guest['vmid']?.toString() == id &&
+              guestBackupNamespaces(guest).contains(namespace);
+        });
+        items.add(
+          _SearchItem(
+            kind: deployed ? _SearchKind.backupGroup : _SearchKind.orphanBackup,
+            sourceId: source.id,
+            sourceName: source.name,
+            node: '',
+            title: '$type/$id',
+            subtitle:
+                '${source.name} · $datastore · ${namespace.isEmpty ? 'root' : namespace}',
+            status: deployed ? 'backup' : 'orphan',
           ),
         );
       }
@@ -194,11 +277,13 @@ class _SearchResults extends StatelessWidget {
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
         return ListTile(
-          leading: Icon(
-            item.kind == _SearchKind.node
-                ? Icons.hub_outlined
-                : Icons.developer_board_outlined,
-          ),
+          leading: Icon(switch (item.kind) {
+            _SearchKind.node => Icons.hub_outlined,
+            _SearchKind.guest => Icons.developer_board_outlined,
+            _SearchKind.source => Icons.dns_outlined,
+            _SearchKind.backupGroup => Icons.backup_outlined,
+            _SearchKind.orphanBackup => Icons.link_off_outlined,
+          }),
           title: Text(item.title),
           subtitle: Text(item.subtitle),
           trailing: Row(
@@ -215,6 +300,10 @@ class _SearchResults extends StatelessWidget {
                 '/sources/${item.sourceId}/nodes/'
                 '${Uri.encodeComponent(item.node)}',
               );
+              return;
+            }
+            if (item.kind != _SearchKind.guest) {
+              context.go('/sources/${item.sourceId}');
               return;
             }
             final query = item.title.isEmpty
@@ -267,7 +356,7 @@ class _SearchItem {
   }
 }
 
-enum _SearchKind { node, guest }
+enum _SearchKind { node, guest, backupGroup, orphanBackup, source }
 
 bool _isGuest(Map<String, Object?> item) {
   return item['type'] == 'qemu' || item['type'] == 'lxc';

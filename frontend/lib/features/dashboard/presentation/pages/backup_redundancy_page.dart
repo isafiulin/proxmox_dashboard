@@ -4,6 +4,7 @@ import 'package:frontend/core/api/api_client.dart';
 import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
 import 'package:frontend/features/sources/domain/backup_analysis.dart';
+import 'package:frontend/features/sources/domain/pbs_health.dart';
 import 'package:frontend/features/sources/domain/source.dart';
 import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
 import 'package:frontend/shared/widgets/app_card.dart';
@@ -100,6 +101,10 @@ class BackupRedundancyPage extends StatelessWidget {
             .where((sourceName) => sourceName.isNotEmpty)
             .toSet();
         final backupLocations = guestSnapshots
+            .map(pbsBackupLocation)
+            .where((location) => location.replaceAll('\u0001', '').isNotEmpty)
+            .toSet();
+        final backupLocationLabels = guestSnapshots
             .map((snapshot) {
               final sourceName = snapshot['backupSource']?.toString() ?? '';
               final datastore = snapshot['datastore']?.toString() ?? '';
@@ -134,7 +139,7 @@ class BackupRedundancyPage extends StatelessWidget {
             name: guest['name']?.toString() ?? '',
             guestStatus: guest['status']?.toString() ?? 'unknown',
             backupSources: backupSources,
-            backupLocations: backupLocations,
+            backupLocations: backupLocationLabels,
             snapshotCount: guestSnapshots.length,
             latestBackupAt: summary.latestBackupAt,
           ),

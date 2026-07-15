@@ -17,4 +17,6 @@ abstract interface class AppStore {
   Future<void> load();
 
   Future<void> save();
+
+  Future<bool> checkHealth();
 }

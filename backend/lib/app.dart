@@ -129,7 +129,11 @@ class App {
     } on ProxmoxApiException catch (error) {
       logger.warning('integration.proxmox_api_error', <String, Object?>{
         'message': error.message,
-        'path': request.uri.path,
+        'requestPath': request.uri.path,
+        'sourceId': error.sourceId,
+        'sourceType': error.sourceType,
+        'integrationPath': error.path,
+        'integrationStatusCode': error.statusCode,
       });
       await sendJson(request, {'error': error.message},
           statusCode: HttpStatus.badGateway);
@@ -165,19 +169,25 @@ class App {
 
     if (method == 'GET' && path == '/api/health') {
       final now = DateTime.now().toUtc();
+      final databaseHealthy = await store.checkHealth();
       final latestSnapshot = store.dataSnapshots.isEmpty
           ? null
           : (List.of(store.dataSnapshots)
                 ..sort((a, b) => b.collectedAt.compareTo(a.collectedAt)))
               .first;
       return sendJson(request, {
-        'status': 'ok',
+        'status': databaseHealthy ? 'ok' : 'degraded',
         'service': 'neotelecom-backend',
-        'version': '0.1.0',
+        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.0',
+        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.0',
+        'frontendVersion':
+            Platform.environment['FRONTEND_VERSION'] ?? '1.1.0+2',
+        'gitCommit': Platform.environment['GIT_COMMIT'] ?? 'unknown',
         'time': now.toIso8601String(),
         'startedAt': startedAt.toIso8601String(),
         'uptimeSeconds': now.difference(startedAt).inSeconds,
         'storeDriver': storeDriver,
+        'databaseStatus': databaseHealthy ? 'ok' : 'error',
         'sources': store.sources.length,
         'users': store.users.length,
         'snapshots': store.dataSnapshots.length,
@@ -222,6 +232,10 @@ class App {
 
     if (method == 'GET' && path == '/api/dashboard/summary') {
       return sendJson(request, dashboard.summary());
+    }
+
+    if (method == 'GET' && path == '/api/collection-metrics') {
+      return sendJson(request, collection.metrics());
     }
 
     if (method == 'GET' && path == '/api/settings') {
@@ -436,7 +450,7 @@ class App {
     }
 
     final pbsRoute = RegExp(
-      r'^/api/proxmox-backup/([^/]+)/(datastores|tasks)$',
+      r'^/api/proxmox-backup/([^/]+)/(datastores|tasks|health)$',
     ).firstMatch(path);
     if (pbsRoute != null && method == 'GET') {
       final String sourceId = pbsRoute.group(1)!;
@@ -444,6 +458,7 @@ class App {
       final Object? data = switch (dataType) {
         'datastores' => await infrastructure.proxmoxBackupDatastores(sourceId),
         'tasks' => await infrastructure.proxmoxBackupTasks(sourceId),
+        'health' => await infrastructure.proxmoxBackupHealth(sourceId),
         _ => null,
       };
       return sendJson(request, {'data': data});

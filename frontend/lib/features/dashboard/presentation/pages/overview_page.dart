@@ -9,6 +9,7 @@ import 'package:frontend/features/snapshots/domain/data_snapshot.dart';
 import 'package:frontend/features/snapshots/domain/resource_history.dart';
 import 'package:frontend/features/snapshots/presentation/cubit/snapshots_cubit.dart';
 import 'package:frontend/features/sources/domain/backup_analysis.dart';
+import 'package:frontend/features/sources/domain/pbs_health.dart';
 import 'package:frontend/features/sources/domain/source.dart';
 import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
 import 'package:frontend/features/users/presentation/cubit/users_cubit.dart';
@@ -102,8 +103,15 @@ class OverviewPage extends StatelessWidget {
   }
 }
 
-class _SuperCriticalAlarms extends StatelessWidget {
+class _SuperCriticalAlarms extends StatefulWidget {
   const _SuperCriticalAlarms();
+
+  @override
+  State<_SuperCriticalAlarms> createState() => _SuperCriticalAlarmsState();
+}
+
+class _SuperCriticalAlarmsState extends State<_SuperCriticalAlarms> {
+  _AlarmCategory _category = _AlarmCategory.all;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +137,11 @@ class _SuperCriticalAlarms extends StatelessWidget {
                 final alarms = data == null
                     ? <_CriticalAlarm>[]
                     : _buildCriticalAlarms(data);
+                final visible = _category == _AlarmCategory.all
+                    ? alarms
+                    : alarms
+                          .where((alarm) => alarm.category == _category)
+                          .toList();
                 return AppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,19 +164,50 @@ class _SuperCriticalAlarms extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      if (alarms.isEmpty)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _AlarmCategory.values.map((category) {
+                          return FilterChip(
+                            label: Text(category.label),
+                            selected: _category == category,
+                            onSelected: (_) =>
+                                setState(() => _category = category),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 12),
+                      if (visible.isEmpty)
                         const EmptyState(
                           icon: Icons.verified_outlined,
-                          text: 'Super critical alarm-ов сейчас нет.',
+                          text: 'Alarm-ов в этой категории сейчас нет.',
                         )
                       else
-                        ...alarms.take(12).map(_CriticalAlarmTile.new),
+                        _CriticalAlarmList(alarms: visible),
                     ],
                   ),
                 );
               },
         );
       },
+    );
+  }
+}
+
+class _CriticalAlarmList extends StatelessWidget {
+  const _CriticalAlarmList({required this.alarms});
+
+  final List<_CriticalAlarm> alarms;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 560),
+      child: Scrollbar(
+        child: SingleChildScrollView(
+          child: Column(children: alarms.map(_CriticalAlarmTile.new).toList()),
+        ),
+      ),
     );
   }
 }
@@ -371,6 +415,7 @@ class _CriticalAlarm {
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.category,
     this.path,
   });
 
@@ -378,6 +423,7 @@ class _CriticalAlarm {
   final IconData icon;
   final String title;
   final String subtitle;
+  final _AlarmCategory category;
   final String? path;
 }
 
@@ -391,6 +437,7 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
         icon: Icons.cloud_off_outlined,
         title: 'Ошибка сбора: ${error['source'] ?? 'source'}',
         subtitle: error['error']?.toString() ?? 'Интеграция не ответила.',
+        category: _AlarmCategory.integration,
       ),
     );
   }
@@ -423,6 +470,7 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
           icon: Icons.backup_outlined,
           title: '$label работает без backup',
           subtitle: '$source / $node · snapshots для VM/LXC не найдены',
+          category: _AlarmCategory.backup,
           path: path,
         ),
       );
@@ -436,6 +484,7 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
       subtitle: '$source / $node · ${formatPercent(ratioValue(guest['cpu']))}',
       value: ratioValue(guest['cpu']),
       path: path,
+      category: _AlarmCategory.resource,
     );
     _addRatioAlarm(
       alarms,
@@ -446,6 +495,7 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
           '$source / $node · ${formatPercent(ratioPairValue(guest['mem'], guest['maxmem']))}',
       value: ratioPairValue(guest['mem'], guest['maxmem']),
       path: path,
+      category: _AlarmCategory.resource,
     );
   }
 
@@ -461,6 +511,7 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
       subtitle: '$source · ${formatPercent(ratioValue(node['cpu']))}',
       value: ratioValue(node['cpu']),
       path: path,
+      category: _AlarmCategory.resource,
     );
     _addRatioAlarm(
       alarms,
@@ -471,6 +522,7 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
           '$source · ${formatPercent(ratioPairValue(node['mem'], node['maxmem']))}',
       value: ratioPairValue(node['mem'], node['maxmem']),
       path: path,
+      category: _AlarmCategory.resource,
     );
   }
 
@@ -488,6 +540,25 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
           '${formatBytes(storage['disk'])} / ${formatBytes(storage['maxdisk'])}',
       value: usage,
       path: _nodePath(storage),
+      category: _AlarmCategory.resource,
+    );
+  }
+
+  for (final task in data.tasks.where(isFailedPbsTask)) {
+    final sourceId = task['sourceId']?.toString() ?? '';
+    final workerType = task['worker_type']?.toString() ?? 'task';
+    alarms.add(
+      _CriticalAlarm(
+        priority: 1,
+        icon: Icons.task_alt_outlined,
+        title: 'PBS task failed: $workerType',
+        subtitle:
+            '${task['source'] ?? ''} · ${task['worker_id'] ?? ''} · ${task['status'] ?? ''}',
+        category: isPbsMaintenanceTask(task)
+            ? _AlarmCategory.backup
+            : _AlarmCategory.integration,
+        path: sourceId.isEmpty ? '/pbs-health' : '/sources/$sourceId',
+      ),
     );
   }
 
@@ -509,6 +580,7 @@ void _addRatioAlarm(
   required String subtitle,
   required double value,
   required String? path,
+  required _AlarmCategory category,
 }) {
   if (value >= 0.9) {
     alarms.add(
@@ -517,10 +589,22 @@ void _addRatioAlarm(
         icon: icon,
         title: title,
         subtitle: subtitle,
+        category: category,
         path: path,
       ),
     );
   }
+}
+
+enum _AlarmCategory {
+  all('All'),
+  backup('Backup'),
+  resource('Resource'),
+  integration('Integration');
+
+  const _AlarmCategory(this.label);
+
+  final String label;
 }
 
 String? _nodePath(Map<String, Object?> row) {

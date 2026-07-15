@@ -49,17 +49,20 @@ class SourceDataRepository {
     ];
 
     return ProxmoxVeData(
-      nodes: _mergeNodeMetrics(
-        nodes: nodes,
-        nodeResources: nodeResources,
-        nodeStatuses: nodeStatuses,
+      nodes: _withSourceId(
+        _mergeNodeMetrics(
+          nodes: nodes,
+          nodeResources: nodeResources,
+          nodeStatuses: nodeStatuses,
+        ),
+        sourceId,
       ),
-      nodeResources: nodeResources,
-      vmResources: effectiveVmResources,
-      storageResources: effectiveStorageResources,
-      storageConfig: storageConfig,
-      resources: mergedResources,
-      tasks: tasks,
+      nodeResources: _withSourceId(nodeResources, sourceId),
+      vmResources: _withSourceId(effectiveVmResources, sourceId),
+      storageResources: _withSourceId(effectiveStorageResources, sourceId),
+      storageConfig: _withSourceId(storageConfig, sourceId),
+      resources: _withSourceId(mergedResources, sourceId),
+      tasks: _withSourceId(tasks, sourceId),
     );
   }
 
@@ -113,13 +116,16 @@ class SourceDataRepository {
   }
 
   Future<ProxmoxBackupData> loadProxmoxBackup(String sourceId) async {
-    final List<Map<String, Object?>> datastores = await _list(
-      '/proxmox-backup/$sourceId/datastores',
-    );
-    final List<Map<String, Object?>> tasks = await _list(
-      '/proxmox-backup/$sourceId/tasks',
-    );
+    final results = await Future.wait<Object>(<Future<Object>>[
+      _list('/proxmox-backup/$sourceId/datastores'),
+      _list('/proxmox-backup/$sourceId/tasks'),
+      _mapOptional('/proxmox-backup/$sourceId/health'),
+    ]);
+    final datastores = results[0] as List<Map<String, Object?>>;
+    final tasks = results[1] as List<Map<String, Object?>>;
+    final health = results[2] as Map<String, Object?>;
     final List<Map<String, Object?>> snapshots = <Map<String, Object?>>[];
+    final List<Map<String, Object?>> namespaceRows = <Map<String, Object?>>[];
 
     for (final Map<String, Object?> datastore in datastores) {
       final String? store = datastore['store'] as String?;
@@ -128,6 +134,10 @@ class SourceDataRepository {
       }
       final namespaces = await _backupNamespaces(sourceId, store);
       for (final namespace in namespaces) {
+        namespaceRows.add(<String, Object?>{
+          'datastore': store,
+          'namespace': namespace.isEmpty ? 'root' : namespace,
+        });
         final path =
             '/proxmox-backup/$sourceId/datastores/${Uri.encodeComponent(store)}/snapshots'
             '${namespace.isEmpty ? '' : '?namespace=${Uri.encodeQueryComponent(namespace)}'}';
@@ -145,9 +155,20 @@ class SourceDataRepository {
     }
 
     return ProxmoxBackupData(
-      datastores: datastores,
-      tasks: tasks,
-      snapshots: snapshots,
+      datastores: _withSourceId(datastores, sourceId),
+      tasks: _withSourceId(tasks, sourceId),
+      snapshots: _withSourceId(snapshots, sourceId),
+      namespaces: _withSourceId(namespaceRows, sourceId),
+      datastoreUsage: _withSourceId(_mapList(health['datastores']), sourceId),
+      verifyJobs: _withSourceId(_mapList(health['verifyJobs']), sourceId),
+      pruneJobs: _withSourceId(_mapList(health['pruneJobs']), sourceId),
+      gcJobs: _withSourceId(_mapList(health['gcJobs']), sourceId),
+      syncJobs: _withSourceId(_mapList(health['syncJobs']), sourceId),
+      datastoreConfig: _withSourceId(
+        _mapList(health['datastoreConfig']),
+        sourceId,
+      ),
+      healthErrors: _withSourceId(_mapList(health['errors']), sourceId),
     );
   }
 
@@ -269,12 +290,44 @@ class ProxmoxBackupData {
     required this.datastores,
     required this.tasks,
     required this.snapshots,
+    required this.namespaces,
+    required this.datastoreUsage,
+    required this.verifyJobs,
+    required this.pruneJobs,
+    required this.gcJobs,
+    required this.syncJobs,
+    required this.datastoreConfig,
+    required this.healthErrors,
   });
 
   final List<Map<String, Object?>> datastores;
   final List<Map<String, Object?>> tasks;
   final List<Map<String, Object?>> snapshots;
+  final List<Map<String, Object?>> namespaces;
+  final List<Map<String, Object?>> datastoreUsage;
+  final List<Map<String, Object?>> verifyJobs;
+  final List<Map<String, Object?>> pruneJobs;
+  final List<Map<String, Object?>> gcJobs;
+  final List<Map<String, Object?>> syncJobs;
+  final List<Map<String, Object?>> datastoreConfig;
+  final List<Map<String, Object?>> healthErrors;
 }
+
+List<Map<String, Object?>> _mapList(Object? value) {
+  if (value is! List) {
+    return <Map<String, Object?>>[];
+  }
+  return value
+      .whereType<Map>()
+      .map((item) => item.cast<String, Object?>())
+      .toList();
+}
+
+List<Map<String, Object?>> _withSourceId(
+  List<Map<String, Object?>> rows,
+  String sourceId,
+) =>
+    rows.map((row) => <String, Object?>{'sourceId': sourceId, ...row}).toList();
 
 List<Map<String, Object?>> _mergeNodeMetrics({
   required List<Map<String, Object?>> nodes,

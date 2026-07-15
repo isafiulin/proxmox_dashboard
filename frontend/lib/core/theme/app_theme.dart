@@ -36,6 +36,14 @@ class AppTheme {
         ),
       ),
       dividerTheme: const DividerThemeData(color: AppColors.border, space: 1),
+      dataTableTheme: const DataTableThemeData(
+        headingRowColor: WidgetStatePropertyAll(AppColors.scaffold),
+        headingRowHeight: 44,
+        dataRowMinHeight: 42,
+        dataRowMaxHeight: 52,
+        horizontalMargin: 16,
+        columnSpacing: 28,
+      ),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(AppRadii.md)),

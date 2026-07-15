@@ -25,7 +25,12 @@ class ProxmoxApiClient {
     String path,
   ) async {
     if (credential.isEmpty) {
-      throw const ProxmoxApiException('source_credentials_missing');
+      throw ProxmoxApiException(
+        'source_credentials_missing',
+        sourceId: source.id,
+        sourceType: source.type,
+        path: path,
+      );
     }
 
     final Uri uri = _uriFor(source.baseUrl, path);
@@ -72,6 +77,10 @@ class ProxmoxApiClient {
       });
       throw ProxmoxApiException(
         'HTTP ${response.statusCode}: ${json['errors'] ?? json['message'] ?? body}',
+        sourceId: source.id,
+        sourceType: source.type,
+        path: path,
+        statusCode: response.statusCode,
       );
     } on Object catch (error) {
       if (error is! ProxmoxApiException) {
@@ -86,7 +95,15 @@ class ProxmoxApiClient {
           error: error,
         );
       }
-      rethrow;
+      if (error is ProxmoxApiException) {
+        rethrow;
+      }
+      throw ProxmoxApiException(
+        'integration_request_failed: $error',
+        sourceId: source.id,
+        sourceType: source.type,
+        path: path,
+      );
     } finally {
       client.close(force: true);
     }
@@ -100,7 +117,17 @@ Uri _uriFor(String baseUrl, String path) {
 }
 
 class ProxmoxApiException implements Exception {
-  const ProxmoxApiException(this.message);
+  const ProxmoxApiException(
+    this.message, {
+    this.sourceId,
+    this.sourceType,
+    this.path,
+    this.statusCode,
+  });
 
   final String message;
+  final String? sourceId;
+  final String? sourceType;
+  final String? path;
+  final int? statusCode;
 }

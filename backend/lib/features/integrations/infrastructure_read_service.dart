@@ -231,6 +231,60 @@ class InfrastructureReadService {
         '/api2/json/nodes/localhost/tasks?limit=250');
   }
 
+  Future<Object?> proxmoxBackupHealth(String sourceId) async {
+    final Source source = _requireSource(sourceId, 'proxmox_backup');
+    final credential = await _sources.credentialFor(source.id);
+    final errors = <Map<String, Object?>>[];
+    final datastores = await _optionalBackupList(
+      source,
+      credential,
+      '/api2/json/status/datastore-usage',
+      'datastore_usage',
+      errors,
+    );
+    final verifyJobs = await _optionalBackupList(
+      source,
+      credential,
+      '/api2/json/config/verify',
+      'verify_jobs',
+      errors,
+    );
+    final pruneJobs = await _optionalBackupList(
+      source,
+      credential,
+      '/api2/json/config/prune',
+      'prune_jobs',
+      errors,
+    );
+    final syncJobs = await _optionalBackupList(
+      source,
+      credential,
+      '/api2/json/config/sync',
+      'sync_jobs',
+      errors,
+    );
+    final datastoreConfig = await _optionalBackupList(
+      source,
+      credential,
+      '/api2/json/config/datastore',
+      'datastore_config',
+      errors,
+    );
+    final gcJobs = datastoreConfig
+        .where(
+            (row) => row['gc-schedule']?.toString().trim().isNotEmpty == true)
+        .toList();
+    return <String, Object?>{
+      'datastores': datastores,
+      'verifyJobs': verifyJobs,
+      'pruneJobs': pruneJobs,
+      'gcJobs': gcJobs,
+      'syncJobs': syncJobs,
+      'datastoreConfig': datastoreConfig,
+      'errors': errors,
+    };
+  }
+
   Future<Object?> proxmoxBackupNamespaces(
       String sourceId, String datastore) async {
     final Source source = _requireSource(sourceId, 'proxmox_backup');
@@ -252,6 +306,38 @@ class InfrastructureReadService {
       await _sources.credentialFor(source.id),
       '/api2/json/admin/datastore/$datastore/snapshots$nsQuery',
     );
+  }
+
+  Future<List<Map<String, Object?>>> _optionalBackupList(
+    Source source,
+    String credential,
+    String path,
+    String operation,
+    List<Map<String, Object?>> errors,
+  ) async {
+    try {
+      final data = await _client.getBackup(source, credential, path);
+      if (data is! List) {
+        return <Map<String, Object?>>[];
+      }
+      return data
+          .whereType<Map>()
+          .map((item) => item.cast<String, Object?>())
+          .toList();
+    } on ProxmoxApiException catch (error) {
+      errors.add(<String, Object?>{
+        'operation': operation,
+        'message': error.message,
+        'path': error.path ?? path,
+        'statusCode': error.statusCode,
+      });
+      _logger.warning('integration.pbs_health_skipped', <String, Object?>{
+        'sourceId': source.id,
+        'operation': operation,
+        'error': error.message,
+      });
+      return <Map<String, Object?>>[];
+    }
   }
 
   Source _requireSource(String sourceId, String type) {

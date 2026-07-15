@@ -61,11 +61,13 @@ class CollectionService {
     final stopwatch = Stopwatch()..start();
     late final DataSnapshot snapshot;
     try {
+      final payload = await _payloadFor(source);
+      payload['collectionDurationMs'] = stopwatch.elapsedMilliseconds;
       snapshot = DataSnapshot.create(
         sourceId: source.id,
         sourceType: source.type,
         status: 'ok',
-        payload: await _payloadFor(source),
+        payload: payload,
       );
       source.status = 'ok';
       source.lastSeenAt = snapshot.collectedAt;
@@ -79,7 +81,10 @@ class CollectionService {
         sourceId: source.id,
         sourceType: source.type,
         status: 'critical',
-        payload: <String, Object?>{'error': error.toString()},
+        payload: <String, Object?>{
+          'error': error.toString(),
+          'collectionDurationMs': stopwatch.elapsedMilliseconds,
+        },
       );
       source.status = 'critical';
       _logger.error(
@@ -125,6 +130,96 @@ class CollectionService {
   Future<void> prune({DateTime? now}) async {
     pruneExpiredSnapshots(_store.dataSnapshots, now: now);
     await _store.save();
+  }
+
+  Map<String, Object?> metrics() {
+    final rows = <Map<String, Object?>>[];
+    final dailyRows = <Map<String, Object?>>[];
+    for (final source in _store.sources) {
+      final snapshots = _store.dataSnapshots
+          .where((snapshot) => snapshot.sourceId == source.id)
+          .toList();
+      final durations = snapshots
+          .map(
+            (snapshot) => int.tryParse(
+              snapshot.payload['collectionDurationMs']?.toString() ?? '',
+            ),
+          )
+          .whereType<int>()
+          .toList();
+      final failures =
+          snapshots.where((snapshot) => snapshot.status != 'ok').length;
+      rows.add(<String, Object?>{
+        'sourceId': source.id,
+        'sourceName': source.name,
+        'sourceType': source.type,
+        'polls': snapshots.length,
+        'successes': snapshots.length - failures,
+        'errors': failures,
+        'averageDurationMs': durations.isEmpty
+            ? null
+            : durations.reduce((left, right) => left + right) ~/
+                durations.length,
+        'lastDurationMs': durations.isEmpty ? null : durations.last,
+        'lastCollectedAt': snapshots.isEmpty
+            ? null
+            : (snapshots
+                  ..sort(
+                    (left, right) =>
+                        right.collectedAt.compareTo(left.collectedAt),
+                  ))
+                .first
+                .collectedAt
+                .toIso8601String(),
+        'status': source.status,
+      });
+      final byDay = <String, List<DataSnapshot>>{};
+      for (final snapshot in snapshots) {
+        final day = snapshot.collectedAt.toUtc().toIso8601String().substring(
+              0,
+              10,
+            );
+        byDay.putIfAbsent(day, () => <DataSnapshot>[]).add(snapshot);
+      }
+      for (final entry in byDay.entries) {
+        final dayDurations = entry.value
+            .map(
+              (snapshot) => int.tryParse(
+                snapshot.payload['collectionDurationMs']?.toString() ?? '',
+              ),
+            )
+            .whereType<int>()
+            .toList();
+        dailyRows.add(<String, Object?>{
+          'sourceId': source.id,
+          'sourceName': source.name,
+          'day': entry.key,
+          'polls': entry.value.length,
+          'errors':
+              entry.value.where((snapshot) => snapshot.status != 'ok').length,
+          'averageDurationMs': dayDurations.isEmpty
+              ? null
+              : dayDurations.reduce((left, right) => left + right) ~/
+                  dayDurations.length,
+        });
+      }
+    }
+    dailyRows.sort(
+      (left, right) =>
+          (right['day'] as String).compareTo(left['day'] as String),
+    );
+    return <String, Object?>{
+      'sources': rows,
+      'daily': dailyRows,
+      'totalPolls': rows.fold<int>(
+        0,
+        (sum, row) => sum + (row['polls'] as int),
+      ),
+      'totalErrors': rows.fold<int>(
+        0,
+        (sum, row) => sum + (row['errors'] as int),
+      ),
+    };
   }
 }
 

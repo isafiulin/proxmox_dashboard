@@ -65,4 +65,7 @@ class JsonStore implements AppStore {
       'settings': settings.toJson(),
     }));
   }
+
+  @override
+  Future<bool> checkHealth() async => true;
 }

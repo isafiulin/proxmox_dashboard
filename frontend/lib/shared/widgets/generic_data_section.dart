@@ -3,6 +3,7 @@ import 'package:frontend/shared/formatters/value_formatters.dart';
 import 'package:frontend/shared/tables/table_sorting.dart';
 import 'package:frontend/shared/widgets/app_card.dart';
 import 'package:frontend/shared/widgets/empty_state.dart';
+import 'package:go_router/go_router.dart';
 
 class GenericDataSection extends StatefulWidget {
   const GenericDataSection({
@@ -73,7 +74,11 @@ class _GenericDataSectionState extends State<GenericDataSection> {
                     )
                     .toList(),
                 rows: visibleRows.take(100).map((Map<String, Object?> row) {
+                  final path = _drillDownPath(row);
                   return DataRow(
+                    onSelectChanged: path == null
+                        ? null
+                        : (_) => context.go(path),
                     cells: columns
                         .map(
                           (String column) => DataCell(
@@ -95,4 +100,25 @@ class _GenericDataSectionState extends State<GenericDataSection> {
       ),
     );
   }
+}
+
+String? _drillDownPath(Map<String, Object?> row) {
+  final sourceId =
+      row['sourceId']?.toString() ?? row['backupSourceId']?.toString() ?? '';
+  if (sourceId.isEmpty) {
+    return null;
+  }
+  final node = row['node']?.toString() ?? '';
+  final type = row['type']?.toString() ?? '';
+  final vmid = row['vmid']?.toString() ?? '';
+  if (node.isNotEmpty && vmid.isNotEmpty && (type == 'qemu' || type == 'lxc')) {
+    final name = row['name']?.toString() ?? '';
+    final query = name.isEmpty ? '' : '?name=${Uri.encodeQueryComponent(name)}';
+    return '/sources/$sourceId/guests/$type/'
+        '${Uri.encodeComponent(node)}/$vmid$query';
+  }
+  if (node.isNotEmpty && node != 'PBS') {
+    return '/sources/$sourceId/nodes/${Uri.encodeComponent(node)}';
+  }
+  return '/sources/$sourceId';
 }

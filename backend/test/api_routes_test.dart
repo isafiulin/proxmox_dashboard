@@ -33,6 +33,12 @@ void main() {
     expect(response.json['status'], 'ok');
     expect(response.json['service'], 'neotelecom-backend');
     expect(response.json['storeDriver'], 'json');
+    expect(response.json['databaseStatus'], 'ok');
+    expect(response.json['backendVersion'], isA<String>());
+    expect(response.json['frontendVersion'], isA<String>());
+    expect(response.json['backendVersion'], '0.2.0');
+    expect(response.json['frontendVersion'], '1.1.0+2');
+    expect(response.json['gitCommit'], isA<String>());
     expect(response.json['uptimeSeconds'], isA<int>());
     expect(response.json['collectionIntervalMinutes'], isA<int>());
   });
@@ -113,6 +119,20 @@ void main() {
       (profileResponse.json['user']! as Map<String, Object?>)['displayName'],
       'Root Admin',
     );
+  });
+
+  test('authenticated admin can read collection metrics', () async {
+    final String token = await harness.loginToken();
+    final response = await harness.request(
+      'GET',
+      '/collection-metrics',
+      token: token,
+    );
+
+    expect(response.statusCode, HttpStatus.ok);
+    expect(response.json['sources'], isA<List<Object?>>());
+    expect(response.json['totalPolls'], isA<int>());
+    expect(response.json['totalErrors'], isA<int>());
   });
 
   test('authenticated admin can edit source metadata', () async {

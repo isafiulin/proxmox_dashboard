@@ -179,6 +179,21 @@ class _ProxmoxVeSections extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         GenericDataSection(
+          title: 'Storage config и PBS namespaces',
+          rows: data?.storageConfig ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'storage',
+            'type',
+            'server',
+            'datastore',
+            'namespace',
+            'nodes',
+            'content',
+            'disable',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
           title: 'Последние задачи',
           rows: data?.tasks ?? <Map<String, Object?>>[],
           preferredColumns: const <String>[
@@ -473,12 +488,70 @@ class _ProxmoxBackupSections extends StatelessWidget {
         const SizedBox(height: 16),
         GenericDataSection(
           title: 'Datastores',
-          rows: data?.datastores ?? <Map<String, Object?>>[],
+          rows: data?.datastoreUsage.isNotEmpty == true
+              ? data!.datastoreUsage
+              : data?.datastores ?? <Map<String, Object?>>[],
           preferredColumns: const <String>[
             'store',
+            'used',
+            'avail',
+            'total',
             'comment',
             'gc-status',
             'maintenance-mode',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Datastore namespaces',
+          rows: data?.namespaces ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>['datastore', 'namespace'],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Verify jobs',
+          rows: data?.verifyJobs ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'id',
+            'store',
+            'ns',
+            'schedule',
+            'comment',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Prune / GC jobs',
+          rows: <Map<String, Object?>>[
+            ...?data?.pruneJobs.map(
+              (row) => <String, Object?>{'job-type': 'prune', ...row},
+            ),
+            ...?data?.gcJobs.map(
+              (row) => <String, Object?>{'job-type': 'gc', ...row},
+            ),
+          ],
+          preferredColumns: const <String>[
+            'job-type',
+            'id',
+            'store',
+            'ns',
+            'schedule',
+            'comment',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Sync jobs',
+          rows: data?.syncJobs ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'id',
+            'store',
+            'ns',
+            'schedule',
+            'remote',
+            'remote-store',
+            'remote-ns',
+            'comment',
           ],
         ),
         const SizedBox(height: 16),

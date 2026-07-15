@@ -180,6 +180,13 @@ class _NodeDetailContent extends StatelessWidget {
     final storage = data.storageResources
         .where((Map<String, Object?> item) => item['node']?.toString() == node)
         .toList();
+    final storageConfig = data.storageConfig.where((row) {
+      final nodes = row['nodes']?.toString().trim() ?? '';
+      if (nodes.isEmpty) {
+        return true;
+      }
+      return nodes.split(',').map((value) => value.trim()).contains(node);
+    }).toList();
     final tasks = data.tasks
         .where((Map<String, Object?> item) => item['node']?.toString() == node)
         .toList();
@@ -300,6 +307,21 @@ class _NodeDetailContent extends StatelessWidget {
             'disk',
             'maxdisk',
             'plugintype',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Storage config и PBS namespaces',
+          rows: storageConfig,
+          preferredColumns: const <String>[
+            'storage',
+            'type',
+            'server',
+            'datastore',
+            'namespace',
+            'nodes',
+            'content',
+            'disable',
           ],
         ),
         const SizedBox(height: 16),

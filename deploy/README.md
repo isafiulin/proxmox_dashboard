@@ -13,6 +13,7 @@ Target: one server, two application containers plus database.
 
 ```text
 git pull
+export GIT_COMMIT=$(git rev-parse --short HEAD)
 docker compose build
 docker compose up -d
 ```
@@ -49,3 +50,5 @@ STORE_PATH=data/store.json
 - Replace `CREDENTIALS_ENCRYPTION_KEY` before adding real sources.
 - Set `ALLOW_INSECURE_TLS=false` if Proxmox/PBS uses trusted certificates.
 - Back up PostgreSQL before migrations.
+- Set `GIT_COMMIT` in `deploy/.env` to the deployed commit so `/api/health`
+  can identify the running build.

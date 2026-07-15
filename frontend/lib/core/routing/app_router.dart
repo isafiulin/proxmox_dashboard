@@ -7,11 +7,15 @@ import 'package:frontend/features/auth/presentation/pages/login_page.dart';
 import 'package:frontend/features/auth/presentation/pages/splash_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/backup_health_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/backup_missing_vm_page.dart';
+import 'package:frontend/features/dashboard/presentation/pages/backup_policy_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/backup_redundancy_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/backup_schedule_page.dart';
+import 'package:frontend/features/dashboard/presentation/pages/collection_metrics_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/dashboard_shell.dart';
 import 'package:frontend/features/dashboard/presentation/pages/node_health_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/overview_page.dart';
+import 'package:frontend/features/dashboard/presentation/pages/pbs_health_page.dart';
+import 'package:frontend/features/dashboard/presentation/pages/pbs_verify_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/vm_health_page.dart';
 import 'package:frontend/features/search/presentation/pages/search_page.dart';
 import 'package:frontend/features/sources/presentation/pages/guest_detail_page.dart';
@@ -76,6 +80,11 @@ GoRouter createAppRouter(BuildContext context) {
                 _noTransitionPage(state, const BackupSchedulePage()),
           ),
           GoRoute(
+            path: '/backup-policy',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const BackupPolicyPage()),
+          ),
+          GoRoute(
             path: '/backup-redundancy',
             pageBuilder: (BuildContext context, GoRouterState state) =>
                 _noTransitionPage(state, const BackupRedundancyPage()),
@@ -86,6 +95,16 @@ GoRouter createAppRouter(BuildContext context) {
                 _noTransitionPage(state, const BackupMissingVmPage()),
           ),
           GoRoute(
+            path: '/pbs-health',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const PbsHealthPage()),
+          ),
+          GoRoute(
+            path: '/pbs-verify',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const PbsVerifyPage()),
+          ),
+          GoRoute(
             path: '/node-health',
             pageBuilder: (BuildContext context, GoRouterState state) =>
                 _noTransitionPage(state, const NodeHealthPage()),
@@ -94,6 +113,11 @@ GoRouter createAppRouter(BuildContext context) {
             path: '/vm-health',
             pageBuilder: (BuildContext context, GoRouterState state) =>
                 _noTransitionPage(state, const VmHealthPage()),
+          ),
+          GoRoute(
+            path: '/collection-metrics',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const CollectionMetricsPage()),
           ),
           GoRoute(
             path: '/sources',
