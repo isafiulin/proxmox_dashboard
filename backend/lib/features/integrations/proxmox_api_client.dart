@@ -6,10 +6,15 @@ import 'package:neotelecom_backend/features/integrations/proxmox_auth_header.dar
 import 'package:neotelecom_backend/features/sources/source.dart';
 
 class ProxmoxApiClient {
-  ProxmoxApiClient({required this.allowInsecureTls, required this.logger});
+  ProxmoxApiClient({required this.allowInsecureTls, required this.logger}) {
+    if (allowInsecureTls) {
+      _client.badCertificateCallback = (_, __, ___) => true;
+    }
+  }
 
   final bool allowInsecureTls;
   final AppLogger logger;
+  final HttpClient _client = HttpClient();
 
   Future<Object?> getVe(Source source, String credential, String path) {
     return _get(source, credential, path);
@@ -34,15 +39,11 @@ class ProxmoxApiClient {
     }
 
     final Uri uri = _uriFor(source.baseUrl, path);
-    final HttpClient client = HttpClient();
     final stopwatch = Stopwatch()..start();
-    if (allowInsecureTls) {
-      client.badCertificateCallback = (_, __, ___) => true;
-    }
 
     try {
       final HttpClientRequest request =
-          await client.getUrl(uri).timeout(const Duration(seconds: 10));
+          await _client.getUrl(uri).timeout(const Duration(seconds: 10));
       request.headers
         ..set(
           HttpHeaders.authorizationHeader,
@@ -104,8 +105,6 @@ class ProxmoxApiClient {
         sourceType: source.type,
         path: path,
       );
-    } finally {
-      client.close(force: true);
     }
   }
 }

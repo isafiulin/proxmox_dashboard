@@ -62,8 +62,12 @@ class BackupRedundancyPage extends StatelessWidget {
         .toList();
     final snapshots = <Map<String, Object?>>[];
 
-    for (final source in pbsSources) {
-      final data = await repository.loadProxmoxBackup(source.id);
+    final pbsData = await Future.wait(
+      pbsSources.map((source) => repository.loadProxmoxBackup(source.id)),
+    );
+    for (var index = 0; index < pbsSources.length; index += 1) {
+      final source = pbsSources[index];
+      final data = pbsData[index];
       snapshots.addAll(
         data.snapshots.map(
           (snapshot) => <String, Object?>{
@@ -77,8 +81,12 @@ class BackupRedundancyPage extends StatelessWidget {
 
     final issues = <_BackupRedundancyIssue>[];
     var totalGuests = 0;
-    for (final source in pveSources) {
-      final data = await repository.loadProxmoxVe(source.id);
+    final pveData = await Future.wait(
+      pveSources.map((source) => repository.loadProxmoxVe(source.id)),
+    );
+    for (var index = 0; index < pveSources.length; index += 1) {
+      final source = pveSources[index];
+      final data = pveData[index];
       final expectedNamespaces = backupNamespacesFromStorageConfig(
         data.storageConfig,
         manualNamespace: source.backupNamespace,

@@ -9,6 +9,9 @@ class InfrastructureReadService {
   final SourcesService _sources;
   final ProxmoxApiClient _client;
   final AppLogger _logger;
+  final Map<String, ({DateTime storedAt, Object? data})> _backupSnapshotCache =
+      {};
+  final Map<String, Future<Object?>> _backupSnapshotRequests = {};
 
   Future<Object?> proxmoxVeNodes(String sourceId) async {
     final Source source = _requireSource(sourceId, 'proxmox_ve');
@@ -235,41 +238,49 @@ class InfrastructureReadService {
     final Source source = _requireSource(sourceId, 'proxmox_backup');
     final credential = await _sources.credentialFor(source.id);
     final errors = <Map<String, Object?>>[];
-    final datastores = await _optionalBackupList(
-      source,
-      credential,
-      '/api2/json/status/datastore-usage',
-      'datastore_usage',
-      errors,
-    );
-    final verifyJobs = await _optionalBackupList(
-      source,
-      credential,
-      '/api2/json/config/verify',
-      'verify_jobs',
-      errors,
-    );
-    final pruneJobs = await _optionalBackupList(
-      source,
-      credential,
-      '/api2/json/config/prune',
-      'prune_jobs',
-      errors,
-    );
-    final syncJobs = await _optionalBackupList(
-      source,
-      credential,
-      '/api2/json/config/sync',
-      'sync_jobs',
-      errors,
-    );
-    final datastoreConfig = await _optionalBackupList(
-      source,
-      credential,
-      '/api2/json/config/datastore',
-      'datastore_config',
-      errors,
-    );
+    final results = await Future.wait<
+        List<Map<String, Object?>>>(<Future<List<Map<String, Object?>>>>[
+      _optionalBackupList(
+        source,
+        credential,
+        '/api2/json/status/datastore-usage',
+        'datastore_usage',
+        errors,
+      ),
+      _optionalBackupList(
+        source,
+        credential,
+        '/api2/json/config/verify',
+        'verify_jobs',
+        errors,
+      ),
+      _optionalBackupList(
+        source,
+        credential,
+        '/api2/json/config/prune',
+        'prune_jobs',
+        errors,
+      ),
+      _optionalBackupList(
+        source,
+        credential,
+        '/api2/json/config/sync',
+        'sync_jobs',
+        errors,
+      ),
+      _optionalBackupList(
+        source,
+        credential,
+        '/api2/json/config/datastore',
+        'datastore_config',
+        errors,
+      ),
+    ]);
+    final datastores = results[0];
+    final verifyJobs = results[1];
+    final pruneJobs = results[2];
+    final syncJobs = results[3];
+    final datastoreConfig = results[4];
     final gcJobs = datastoreConfig
         .where(
             (row) => row['gc-schedule']?.toString().trim().isNotEmpty == true)
@@ -298,14 +309,40 @@ class InfrastructureReadService {
   Future<Object?> proxmoxBackupSnapshots(String sourceId, String datastore,
       {String namespace = ''}) async {
     final Source source = _requireSource(sourceId, 'proxmox_backup');
-    final nsQuery = namespace.trim().isEmpty
+    final normalizedNamespace = namespace.trim();
+    final cacheKey = '$sourceId\u0001$datastore\u0001$normalizedNamespace';
+    final cached = _backupSnapshotCache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.storedAt) <
+            const Duration(seconds: 30)) {
+      return cached.data;
+    }
+    final activeRequest = _backupSnapshotRequests[cacheKey];
+    if (activeRequest != null) {
+      return activeRequest;
+    }
+
+    final nsQuery = normalizedNamespace.isEmpty
         ? ''
-        : '?ns=${Uri.encodeQueryComponent(namespace.trim())}';
-    return _client.getBackup(
-      source,
-      await _sources.credentialFor(source.id),
-      '/api2/json/admin/datastore/$datastore/snapshots$nsQuery',
-    );
+        : '?ns=${Uri.encodeQueryComponent(normalizedNamespace)}';
+    final request = () async {
+      return _client.getBackup(
+        source,
+        await _sources.credentialFor(source.id),
+        '/api2/json/admin/datastore/$datastore/snapshots$nsQuery',
+      );
+    }();
+    _backupSnapshotRequests[cacheKey] = request;
+    try {
+      final data = await request;
+      _backupSnapshotCache[cacheKey] = (
+        storedAt: DateTime.now(),
+        data: data,
+      );
+      return data;
+    } finally {
+      _backupSnapshotRequests.remove(cacheKey);
+    }
   }
 
   Future<List<Map<String, Object?>>> _optionalBackupList(

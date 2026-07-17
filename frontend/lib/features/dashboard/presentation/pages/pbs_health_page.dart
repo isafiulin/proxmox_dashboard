@@ -54,11 +54,16 @@ class PbsHealthPage extends StatelessWidget {
     final jobs = <Map<String, Object?>>[];
     final integrationErrors = <Map<String, Object?>>[];
     var pbsCount = 0;
-    for (final source in sources.where(
-      (item) => item.type == 'proxmox_backup',
-    )) {
+    final pbsSources = sources
+        .where((item) => item.type == 'proxmox_backup')
+        .toList();
+    final pbsData = await Future.wait(
+      pbsSources.map((source) => repository.loadProxmoxBackup(source.id)),
+    );
+    for (var index = 0; index < pbsSources.length; index += 1) {
+      final source = pbsSources[index];
+      final data = pbsData[index];
       pbsCount += 1;
-      final data = await repository.loadProxmoxBackup(source.id);
       integrationErrors.addAll(
         data.healthErrors.map(
           (row) => <String, Object?>{'source': source.name, ...row},

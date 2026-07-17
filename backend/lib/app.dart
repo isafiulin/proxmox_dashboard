@@ -178,10 +178,10 @@ class App {
       return sendJson(request, {
         'status': databaseHealthy ? 'ok' : 'degraded',
         'service': 'neotelecom-backend',
-        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.0',
-        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.0',
+        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.1',
+        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.1',
         'frontendVersion':
-            Platform.environment['FRONTEND_VERSION'] ?? '1.1.0+2',
+            Platform.environment['FRONTEND_VERSION'] ?? '1.1.1+3',
         'gitCommit': Platform.environment['GIT_COMMIT'] ?? 'unknown',
         'time': now.toIso8601String(),
         'startedAt': startedAt.toIso8601String(),

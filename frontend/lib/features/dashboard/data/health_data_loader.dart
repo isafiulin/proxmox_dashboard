@@ -35,10 +35,30 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
   final snapshots = <Map<String, Object?>>[];
   final errors = <Map<String, Object?>>[];
 
-  for (final source in sources) {
+  final runtimeData = await Future.wait(
+    sources.map((source) async {
+      try {
+        return await repository.load(source);
+      } catch (error) {
+        errors.add(<String, Object?>{
+          'source': source.name,
+          'type': source.type,
+          'error': error.toString(),
+        });
+        return const SourceRuntimeData();
+      }
+    }),
+  );
+
+  for (var index = 0; index < sources.length; index += 1) {
+    final source = sources[index];
+    final runtime = runtimeData[index];
     try {
       if (source.type == 'proxmox_ve') {
-        final data = await repository.loadProxmoxVe(source.id);
+        final data = runtime.proxmoxVe;
+        if (data == null) {
+          continue;
+        }
         final backupNamespaces = backupNamespacesFromStorageConfig(
           data.storageConfig,
           manualNamespace: source.backupNamespace,
@@ -82,7 +102,10 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
         );
       }
       if (source.type == 'proxmox_backup') {
-        final data = await repository.loadProxmoxBackup(source.id);
+        final data = runtime.proxmoxBackup;
+        if (data == null) {
+          continue;
+        }
         snapshots.addAll(
           data.snapshots.map(
             (snapshot) => <String, Object?>{

@@ -126,32 +126,49 @@ class SourceDataRepository {
     final health = results[2] as Map<String, Object?>;
     final List<Map<String, Object?>> snapshots = <Map<String, Object?>>[];
     final List<Map<String, Object?>> namespaceRows = <Map<String, Object?>>[];
-
-    for (final Map<String, Object?> datastore in datastores) {
-      final String? store = datastore['store'] as String?;
-      if (store == null || store.isEmpty) {
-        continue;
-      }
-      final namespaces = await _backupNamespaces(sourceId, store);
-      for (final namespace in namespaces) {
-        namespaceRows.add(<String, Object?>{
-          'datastore': store,
-          'namespace': namespace.isEmpty ? 'root' : namespace,
-        });
-        final path =
-            '/proxmox-backup/$sourceId/datastores/${Uri.encodeComponent(store)}/snapshots'
-            '${namespace.isEmpty ? '' : '?namespace=${Uri.encodeQueryComponent(namespace)}'}';
-        final List<Map<String, Object?>> datastoreSnapshots = await _list(path);
-        snapshots.addAll(
-          datastoreSnapshots.map(
-            (Map<String, Object?> snapshot) => <String, Object?>{
-              'datastore': store,
-              'namespace': namespace,
-              ...snapshot,
-            },
-          ),
+    final datastoreResults = await Future.wait(
+      datastores.map((datastore) async {
+        final store = datastore['store']?.toString() ?? '';
+        if (store.isEmpty) {
+          return const (
+            namespaces: <Map<String, Object?>>[],
+            snapshots: <Map<String, Object?>>[],
+          );
+        }
+        final namespaces = await _backupNamespaces(sourceId, store);
+        final snapshotBatches = await Future.wait(
+          namespaces.map((namespace) async {
+            final path =
+                '/proxmox-backup/$sourceId/datastores/${Uri.encodeComponent(store)}/snapshots'
+                '${namespace.isEmpty ? '' : '?namespace=${Uri.encodeQueryComponent(namespace)}'}';
+            final datastoreSnapshots = await _list(path);
+            return datastoreSnapshots
+                .map(
+                  (snapshot) => <String, Object?>{
+                    'datastore': store,
+                    'namespace': namespace,
+                    ...snapshot,
+                  },
+                )
+                .toList();
+          }),
         );
-      }
+        return (
+          namespaces: namespaces
+              .map(
+                (namespace) => <String, Object?>{
+                  'datastore': store,
+                  'namespace': namespace.isEmpty ? 'root' : namespace,
+                },
+              )
+              .toList(),
+          snapshots: snapshotBatches.expand((batch) => batch).toList(),
+        );
+      }),
+    );
+    for (final result in datastoreResults) {
+      namespaceRows.addAll(result.namespaces);
+      snapshots.addAll(result.snapshots);
     }
 
     return ProxmoxBackupData(
