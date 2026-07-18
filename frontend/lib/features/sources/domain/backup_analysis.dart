@@ -3,6 +3,7 @@ class GuestBackupSummary {
     required this.matches,
     required this.status,
     this.matchQuality = BackupMatchQuality.idOnly,
+    this.nameMismatchSnapshots = const <Map<String, Object?>>[],
     this.latestBackupAt,
     this.latestSnapshot,
   });
@@ -10,6 +11,7 @@ class GuestBackupSummary {
   final List<Map<String, Object?>> matches;
   final BackupAgeStatus status;
   final BackupMatchQuality matchQuality;
+  final List<Map<String, Object?>> nameMismatchSnapshots;
   final DateTime? latestBackupAt;
   final Map<String, Object?>? latestSnapshot;
 }
@@ -231,7 +233,7 @@ class BackupMissingGuestCandidate {
 
 enum BackupAgeStatus { ok, warning, critical, missing }
 
-enum BackupMatchQuality { nameConfirmed, idOnly, nameMismatch }
+enum BackupMatchQuality { nameConfirmed, idOnly, nameMissing, nameMismatch }
 
 BackupMissingGuestsReport analyzeMissingBackupGuests({
   required List<Map<String, Object?>> snapshots,
@@ -719,17 +721,42 @@ GuestBackupSummary analyzeGuestBackups({
           return snapshotName.contains(normalizedGuestName) ||
               normalizedGuestName.contains(snapshotName);
         }).toList();
+  final nameMismatchSnapshots = normalizedGuestName.isEmpty
+      ? <Map<String, Object?>>[]
+      : namedSnapshots.where((snapshot) {
+          final snapshotName = _normalizeName(_snapshotName(snapshot));
+          return !snapshotName.contains(normalizedGuestName) &&
+              !normalizedGuestName.contains(snapshotName);
+        }).toList();
+  final unnamedMatches = idMatches
+      .where(
+        (snapshot) =>
+            _snapshotName(snapshot).isEmpty &&
+            _hasExpectedGuestConfig(snapshot, expectedBackupType),
+      )
+      .toList();
   final hasNameMismatch =
       normalizedGuestName.isNotEmpty &&
       namedSnapshots.isNotEmpty &&
       nameConfirmedMatches.isEmpty;
-  final matches = nameConfirmedMatches.isNotEmpty
-      ? nameConfirmedMatches
-      : idMatches;
+  final List<Map<String, Object?>> matches;
+  if (nameConfirmedMatches.isNotEmpty) {
+    matches = nameConfirmedMatches;
+  } else if (!hasNameMismatch && unnamedMatches.isNotEmpty) {
+    // ponytail: PBS sometimes has no VM name/comment; VMID+namespace is the
+    // fallback until we persist an explicit PVE-cluster-to-PBS mapping.
+    matches = unnamedMatches;
+  } else if (normalizedGuestName.isEmpty) {
+    matches = idMatches;
+  } else {
+    matches = <Map<String, Object?>>[];
+  }
   final matchQuality = nameConfirmedMatches.isNotEmpty
       ? BackupMatchQuality.nameConfirmed
       : hasNameMismatch
       ? BackupMatchQuality.nameMismatch
+      : unnamedMatches.isNotEmpty
+      ? BackupMatchQuality.nameMissing
       : BackupMatchQuality.idOnly;
 
   matches.sort((a, b) {
@@ -741,6 +768,7 @@ GuestBackupSummary analyzeGuestBackups({
       matches: <Map<String, Object?>>[],
       status: BackupAgeStatus.missing,
       matchQuality: matchQuality,
+      nameMismatchSnapshots: nameMismatchSnapshots,
     );
   }
 
@@ -758,6 +786,7 @@ GuestBackupSummary analyzeGuestBackups({
     latestBackupAt: latestAt,
     latestSnapshot: latest,
     matchQuality: matchQuality,
+    nameMismatchSnapshots: nameMismatchSnapshots,
     status: status,
   );
 }
@@ -853,6 +882,8 @@ String backupMatchDescription(BackupMatchQuality quality) {
       'Backup подтвержден по VMID и имени VM/LXC в PBS notes.',
     BackupMatchQuality.idOnly =>
       'Backup сопоставлен по PBS namespace и VMID. Для одинаковых VMID в разных кластерах namespace должен быть задан в источнике PVE.',
+    BackupMatchQuality.nameMissing =>
+      'Backup сопоставлен по PBS namespace и VMID. Имя VM/LXC в PBS notes отсутствует, поэтому это менее сильное совпадение.',
     BackupMatchQuality.nameMismatch =>
       'Найден snapshot с таким VMID, но PBS notes указывают другое имя VM/LXC. Backup не засчитан, чтобы не смешать разные кластеры.',
   };
@@ -951,6 +982,29 @@ String _backupKey(String namespace, String backupType, String backupId) {
 
 double _snapshotSize(Map<String, Object?> snapshot) {
   return double.tryParse(snapshot['size']?.toString() ?? '') ?? 0;
+}
+
+bool _hasExpectedGuestConfig(
+  Map<String, Object?> snapshot,
+  String expectedBackupType,
+) {
+  final files = snapshot['files'];
+  if (files is! Iterable) {
+    return true;
+  }
+
+  final expectedConfig = expectedBackupType == 'ct'
+      ? 'pct.conf.blob'
+      : 'qemu-server.conf.blob';
+  for (final file in files) {
+    final filename = file is Map
+        ? file['filename']?.toString() ?? ''
+        : file.toString();
+    if (filename == expectedConfig) {
+      return true;
+    }
+  }
+  return false;
 }
 
 String _snapshotName(Map<String, Object?> snapshot) {

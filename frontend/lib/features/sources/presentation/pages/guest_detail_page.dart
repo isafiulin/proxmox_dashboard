@@ -333,14 +333,27 @@ class _BackupSummaryCard extends StatelessWidget {
                     Text(
                       backupMatchDescription(summary.matchQuality),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: summary.matchQuality == BackupMatchQuality.idOnly
-                            ? AppColors.warning
-                            : summary.matchQuality ==
-                                  BackupMatchQuality.nameMismatch
+                        color:
+                            summary.matchQuality ==
+                                BackupMatchQuality.nameMismatch
                             ? AppColors.danger
+                            : summary.matchQuality ==
+                                      BackupMatchQuality.idOnly ||
+                                  summary.matchQuality ==
+                                      BackupMatchQuality.nameMissing
+                            ? AppColors.warning
                             : AppColors.mutedInk,
                       ),
                     ),
+                    if (summary.nameMismatchSnapshots.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _nameMismatchText(summary.nameMismatchSnapshots),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -363,6 +376,24 @@ class _BackupSummaryCard extends StatelessWidget {
             'size',
           ],
         ),
+        if (summary.nameMismatchSnapshots.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          GenericDataSection(
+            title: 'Snapshots с другим именем',
+            rows: summary.nameMismatchSnapshots,
+            preferredColumns: const <String>[
+              'backupSource',
+              'datastore',
+              'namespace',
+              'backup-type',
+              'backup-id',
+              'backup-time',
+              'comment',
+              'notes',
+              'note',
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -402,6 +433,29 @@ String _localDate(DateTime value) {
   String two(int value) => value.toString().padLeft(2, '0');
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
+}
+
+String _nameMismatchText(List<Map<String, Object?>> snapshots) {
+  final names = snapshots
+      .map(_snapshotNote)
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .take(3)
+      .join(', ');
+  if (names.isEmpty) {
+    return 'Есть snapshots с таким VMID, но без совпавшего имени в PBS notes.';
+  }
+  return 'Есть snapshots с таким VMID, но другим именем в PBS notes: $names.';
+}
+
+String _snapshotNote(Map<String, Object?> snapshot) {
+  for (final key in <String>['comment', 'notes', 'note']) {
+    final value = snapshot[key]?.toString().trim() ?? '';
+    if (value.isNotEmpty) {
+      return value;
+    }
+  }
+  return '';
 }
 
 String _guestIpAddress(List<Map<String, Object?>> interfaces) {

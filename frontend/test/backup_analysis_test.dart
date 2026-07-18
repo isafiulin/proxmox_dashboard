@@ -100,6 +100,111 @@ void main() {
       expect(summary.status, BackupAgeStatus.missing);
       expect(summary.matchQuality, BackupMatchQuality.nameMismatch);
       expect(summary.latestBackupAt, isNull);
+      expect(summary.nameMismatchSnapshots, hasLength(1));
+      expect(
+        summary.nameMismatchSnapshots.first['comment'],
+        'Windows10forchinanms',
+      );
+    },
+  );
+
+  test(
+    'does not accept unnamed PBS snapshot when same namespace has name mismatch',
+    () {
+      final now = DateTime.utc(2026, 7, 18, 12);
+      final summary = analyzeGuestBackups(
+        guestType: 'qemu',
+        vmid: '102',
+        guestName: 'ww',
+        now: now,
+        snapshots: <Map<String, Object?>>[
+          <String, Object?>{
+            'backup-type': 'vm',
+            'backup-id': '102',
+            'backup-time': now
+                .subtract(const Duration(hours: 2))
+                .secondsSinceEpoch,
+          },
+          <String, Object?>{
+            'backup-type': 'vm',
+            'backup-id': '102',
+            'backup-time': now
+                .subtract(const Duration(days: 2))
+                .secondsSinceEpoch,
+            'comment': 'old-name',
+          },
+        ],
+      );
+
+      expect(summary.status, BackupAgeStatus.missing);
+      expect(summary.matchQuality, BackupMatchQuality.nameMismatch);
+      expect(summary.matches, isEmpty);
+      expect(summary.nameMismatchSnapshots, hasLength(1));
+      expect(summary.nameMismatchSnapshots.first['comment'], 'old-name');
+    },
+  );
+
+  test(
+    'accepts unnamed PBS snapshot by vmid and namespace when no name exists',
+    () {
+      final now = DateTime.utc(2026, 7, 18, 12);
+      final summary = analyzeGuestBackups(
+        guestType: 'qemu',
+        vmid: '102',
+        guestName: 'ww',
+        now: now,
+        snapshots: <Map<String, Object?>>[
+          <String, Object?>{
+            'namespace': 'mars',
+            'backup-type': 'vm',
+            'backup-id': '102',
+            'backup-time': now
+                .subtract(const Duration(hours: 2))
+                .secondsSinceEpoch,
+            'files': <Map<String, Object?>>[
+              <String, Object?>{'filename': 'qemu-server.conf.blob'},
+              <String, Object?>{'filename': 'drive-scsi0.img.fidx'},
+            ],
+          },
+        ],
+        backupNamespaces: const <String>['mars'],
+      );
+
+      expect(summary.status, BackupAgeStatus.ok);
+      expect(summary.matchQuality, BackupMatchQuality.nameMissing);
+      expect(summary.matches, hasLength(1));
+      expect(summary.nameMismatchSnapshots, isEmpty);
+    },
+  );
+
+  test(
+    'does not accept unnamed PBS snapshot with wrong guest metadata files',
+    () {
+      final now = DateTime.utc(2026, 7, 18, 12);
+      final summary = analyzeGuestBackups(
+        guestType: 'qemu',
+        vmid: '102',
+        guestName: 'ww',
+        now: now,
+        snapshots: <Map<String, Object?>>[
+          <String, Object?>{
+            'namespace': 'mars',
+            'backup-type': 'vm',
+            'backup-id': '102',
+            'backup-time': now
+                .subtract(const Duration(hours: 2))
+                .secondsSinceEpoch,
+            'files': <Map<String, Object?>>[
+              <String, Object?>{'filename': 'client.log.blob'},
+              <String, Object?>{'filename': 'root.pxar.didx'},
+            ],
+          },
+        ],
+        backupNamespaces: const <String>['mars'],
+      );
+
+      expect(summary.status, BackupAgeStatus.missing);
+      expect(summary.matches, isEmpty);
     },
   );
 

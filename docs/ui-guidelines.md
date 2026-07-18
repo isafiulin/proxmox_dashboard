@@ -196,3 +196,14 @@ UI-задача считается завершенной, если:
 - `dart format`, `flutter analyze`, `flutter test` проходят;
 - после frontend changes собран `flutter build web --release`;
 - если приложение запущено через Docker, frontend контейнер пересобран.
+
+## Version bump
+
+Версию нужно обновлять в том же change set, где меняется поведение приложения.
+
+- Frontend: менять `frontend/pubspec.yaml` поле `version: x.y.z+n`.
+- Для обычной UI/logic правки поднимать patch и build number, например `1.1.1+3` -> `1.1.2+4`.
+- Для совместимых новых возможностей поднимать minor и build number.
+- Для breaking changes поднимать major и build number.
+- Backend: менять `backend/pubspec.yaml` только при backend/API изменениях. Runtime `/api/health` может показывать `BACKEND_VERSION`, поэтому для деплоя backend эту env тоже нужно держать синхронной.
+- Если менялись только docs, tests, comments или dev tooling без поведения приложения, version bump не нужен.
