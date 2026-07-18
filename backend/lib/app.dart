@@ -181,7 +181,7 @@ class App {
         'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.1',
         'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.1',
         'frontendVersion':
-            Platform.environment['FRONTEND_VERSION'] ?? '1.1.1+3',
+            Platform.environment['FRONTEND_VERSION'] ?? '1.1.2+4',
         'gitCommit': Platform.environment['GIT_COMMIT'] ?? 'unknown',
         'time': now.toIso8601String(),
         'startedAt': startedAt.toIso8601String(),
