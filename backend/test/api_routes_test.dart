@@ -36,7 +36,7 @@ void main() {
     expect(response.json['databaseStatus'], 'ok');
     expect(response.json['backendVersion'], isA<String>());
     expect(response.json['frontendVersion'], isA<String>());
-    expect(response.json['backendVersion'], '0.3.4');
+    expect(response.json['backendVersion'], '0.3.5');
     expect(response.json['frontendVersion'], '1.2.2+11');
     expect(response.json['gitCommit'], isA<String>());
     expect(response.json['uptimeSeconds'], isA<int>());

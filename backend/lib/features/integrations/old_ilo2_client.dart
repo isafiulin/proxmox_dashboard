@@ -32,10 +32,9 @@ class OldIlo2Client {
         '/system1/log1',
         const <String>[
           'show /system1/log1 -l 1',
-          'show /system1/log1 -all',
-          'show /system1/log1',
         ],
         requireProperties: false,
+        commandTimeout: const Duration(seconds: 10),
       );
     } on Object catch (error) {
       // An oversized or damaged IML must not hide live hardware inventory.
@@ -52,11 +51,23 @@ class OldIlo2Client {
 
   Future<String> _runResource(Source source, String credential,
       String requiredPath, List<String> commands,
-      {required bool requireProperties}) async {
+      {required bool requireProperties,
+      Duration commandTimeout = const Duration(seconds: 45)}) async {
     Object? lastError;
+    final deadline = Stopwatch()..start();
     for (final command in commands) {
+      final remaining = commandTimeout - deadline.elapsed;
+      if (remaining <= Duration.zero) {
+        lastError = TimeoutException('old_ilo2_resource_timeout');
+        break;
+      }
       try {
-        final output = await _run(source, credential, command);
+        final output = await _run(
+          source,
+          credential,
+          command,
+          timeout: remaining,
+        );
         final resource = _parseClpResources(output)[requiredPath];
         if (resource != null && (!requireProperties || resource.isNotEmpty)) {
           return output;
@@ -80,8 +91,9 @@ class OldIlo2Client {
   Future<String> _run(
     Source source,
     String credential,
-    String command,
-  ) async {
+    String command, {
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
     final uri = Uri.parse(source.baseUrl);
     final separator = credential.indexOf(':');
     if (uri.scheme != 'ssh' ||
@@ -133,7 +145,7 @@ class OldIlo2Client {
         'SSH_ASKPASS': askpassPath,
         'OLD_ILO2_PASSWORD': password,
       },
-    ).timeout(const Duration(seconds: 45));
+    ).timeout(timeout);
     final stdout = result.stdout.toString();
     final stderr = result.stderr.toString().trim();
     if (result.exitCode != 0 ||
