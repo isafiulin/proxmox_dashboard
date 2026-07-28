@@ -36,7 +36,7 @@ void main() {
     expect(response.json['databaseStatus'], 'ok');
     expect(response.json['backendVersion'], isA<String>());
     expect(response.json['frontendVersion'], isA<String>());
-    expect(response.json['backendVersion'], '0.3.5');
+    expect(response.json['backendVersion'], '0.3.6');
     expect(response.json['frontendVersion'], '1.2.2+11');
     expect(response.json['gitCommit'], isA<String>());
     expect(response.json['uptimeSeconds'], isA<int>());
@@ -56,6 +56,26 @@ void main() {
     expect(response.statusCode, HttpStatus.ok);
     expect(response.json['token'], isNotEmpty);
     expect((response.json['user']! as Map<String, Object?>)['role'], 'admin');
+  });
+
+  test('JSON responses are UTF-8 encoded', () async {
+    final String token = await harness.loginToken();
+    final TestResponse response = await harness.request(
+      'POST',
+      '/users',
+      token: token,
+      body: <String, Object?>{
+        'email': 'unicode@example.local',
+        'displayName': 'Оператор · Бишкек',
+        'password': 'password123',
+      },
+    );
+
+    expect(response.statusCode, HttpStatus.created);
+    expect(
+      (response.json['user']! as Map<String, Object?>)['displayName'],
+      'Оператор · Бишкек',
+    );
   });
 
   test('authenticated admin can create user and source', () async {

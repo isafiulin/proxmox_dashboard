@@ -15,7 +15,8 @@ Future<void> sendJson(
   int statusCode = HttpStatus.ok,
 }) async {
   request.response.statusCode = statusCode;
-  request.response.write(jsonEncode(body));
+  request.response.headers.contentType = ContentType.json;
+  request.response.add(utf8.encode(jsonEncode(body)));
   await request.response.close();
 }
 
