@@ -19,12 +19,24 @@ class IpmiClient {
     final sdr = await _run(source, credential, const <String>['sdr', 'elist']);
     final sel = await _run(source, credential, const <String>['sel', 'elist']);
     final fru = await _run(source, credential, const <String>['fru']);
+    final poh = await _runOptional(
+      source,
+      credential,
+      const <String>['chassis', 'poh'],
+    );
+    final lan = await _runOptional(
+      source,
+      credential,
+      const <String>['lan', 'print', '1'],
+    );
     return parseIpmiInventory(
       mcOutput: mc,
       chassisOutput: chassis,
       sdrOutput: sdr,
       selOutput: sel,
       fruOutput: fru,
+      pohOutput: poh,
+      lanOutput: lan,
     );
   }
 
@@ -81,6 +93,23 @@ class IpmiClient {
     });
     return stdout;
   }
+
+  Future<String> _runOptional(
+    Source source,
+    String credential,
+    List<String> command,
+  ) async {
+    try {
+      return await _run(source, credential, command);
+    } on Object catch (error) {
+      logger.warning('integration.ipmi_optional_skipped', <String, Object?>{
+        'sourceId': source.id,
+        'command': command.join(' '),
+        'error': error.toString(),
+      });
+      return '';
+    }
+  }
 }
 
 Map<String, Object?> parseIpmiInventory({
@@ -89,15 +118,20 @@ Map<String, Object?> parseIpmiInventory({
   required String sdrOutput,
   required String selOutput,
   required String fruOutput,
+  String pohOutput = '',
+  String lanOutput = '',
 }) {
   final mc = _keyValues(mcOutput);
   final chassis = _keyValues(chassisOutput);
   final sensors = _parseSdr(sdrOutput);
+  final lan = _keyValues(lanOutput);
   final temperatures = <Map<String, Object?>>[];
   final fans = <Map<String, Object?>>[];
   final discreteSensors = <Map<String, Object?>>[];
   final thresholdSensors = <Map<String, Object?>>[];
   for (final sensor in sensors) {
+    final status = sensor['Status'];
+    if (status is Map && status['State'] == 'Absent') continue;
     final reading = sensor['reading']?.toString() ?? '';
     final units = sensor['ReadingUnits']?.toString() ?? '';
     if (reading.toLowerCase().contains('degrees c') ||
@@ -186,6 +220,7 @@ Map<String, Object?> parseIpmiInventory({
         'Intrusion': chassis['Chassis Intrusion'],
         'DriveFault': chassis['Drive Fault'],
         'CoolingFanFault': chassis['Cooling/Fan Fault'],
+        'PowerOnHours': _powerOnHours(pohOutput),
         'Status': <String, Object?>{
           'Health': systemHealth,
           'State': 'Enabled',
@@ -217,7 +252,24 @@ Map<String, Object?> parseIpmiInventory({
     'storageControllers': const <Map<String, Object?>>[],
     'volumes': const <Map<String, Object?>>[],
     'drives': const <Map<String, Object?>>[],
-    'ethernetInterfaces': const <Map<String, Object?>>[],
+    'ethernetInterfaces':
+        lan['IP Address'] == null && lan['MAC Address'] == null
+            ? const <Map<String, Object?>>[]
+            : <Map<String, Object?>>[
+                <String, Object?>{
+                  'Id': 'bmc-lan1',
+                  'Name': 'BMC LAN 1',
+                  'MACAddress': lan['MAC Address'],
+                  'IPv4Address': lan['IP Address'],
+                  'AddressSource': lan['IP Address Source'],
+                  'SubnetMask': lan['Subnet Mask'],
+                  'Gateway': lan['Default Gateway IP'],
+                  'Status': const <String, Object?>{
+                    'Health': 'OK',
+                    'State': 'Enabled',
+                  },
+                },
+              ],
     'networkInterfaces': const <Map<String, Object?>>[],
     'networkAdapters': const <Map<String, Object?>>[],
     'boards': fruRows,
@@ -372,6 +424,13 @@ int? _number(String value) {
 double? _decimal(String value) {
   final match = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(value);
   return match == null ? null : double.tryParse(match.group(0)!);
+}
+
+int? _powerOnHours(String output) {
+  final match = RegExp(r'(\d+)\s+days?,\s*(\d+)\s+hours?')
+      .firstMatch(output.toLowerCase());
+  if (match == null) return null;
+  return int.parse(match.group(1)!) * 24 + int.parse(match.group(2)!);
 }
 
 String _ipmiDateTime(String date, String time) {

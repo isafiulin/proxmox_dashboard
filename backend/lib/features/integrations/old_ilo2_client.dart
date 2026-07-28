@@ -213,7 +213,7 @@ Map<String, Object?> parseOldIlo2Inventory(
       ..._rawScalars(row),
     };
   });
-  final temperatures = _rows(resources, '/system1/sensor', (path, row) {
+  final sensorRows = _rows(resources, '/system1/sensor', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
       'Name': _resourceName(row, _leaf(path)),
@@ -224,6 +224,16 @@ Map<String, Object?> parseOldIlo2Inventory(
       ..._rawScalars(row),
     };
   });
+  final temperatures = sensorRows
+      .where(
+        (row) =>
+            row['sensortype']?.toString().toLowerCase() == 'temperature' ||
+            row['rateunits']?.toString().toLowerCase() == 'celsius',
+      )
+      .toList();
+  final otherSensors = sensorRows
+      .where((row) => !temperatures.contains(row))
+      .toList(growable: false);
   final powerSupplies = _rows(resources, '/system1/powersupply', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
@@ -259,7 +269,11 @@ Map<String, Object?> parseOldIlo2Inventory(
   ];
   final logEntries = _parseClpResources(logOutput)
       .entries
-      .where((entry) => entry.key.startsWith('/system1/log1/record'))
+      .where(
+        (entry) =>
+            entry.key.startsWith('/system1/log1/record') &&
+            entry.value.isNotEmpty,
+      )
       .map((entry) => _logEntry(entry.key, entry.value))
       .toList()
     ..sort((left, right) => (right['Created']?.toString() ?? '')
@@ -329,7 +343,7 @@ Map<String, Object?> parseOldIlo2Inventory(
     'networkInterfaces': const <Map<String, Object?>>[],
     'networkAdapters': const <Map<String, Object?>>[],
     'boards': const <Map<String, Object?>>[],
-    'discreteSensors': const <Map<String, Object?>>[],
+    'discreteSensors': otherSensors,
     'thresholdSensors': temperatures,
     'firmware': firmwareRows,
     'logServices': const <Map<String, Object?>>[],
@@ -350,6 +364,7 @@ Map<String, Map<String, String>> _parseClpResources(String output) {
         .replaceAll('\r', '')
         .replaceAll(RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '');
     final trimmed = line.trim();
+    final indentation = line.length - line.trimLeft().length;
     if (trimmed.startsWith('/') && !trimmed.contains(' ')) {
       rootPath = trimmed;
       path = trimmed;
@@ -359,11 +374,17 @@ Map<String, Map<String, String>> _parseClpResources(String output) {
       continue;
     }
     if (trimmed == 'Properties') {
+      if (indentation <= 2 && rootPath != null) {
+        path = rootPath;
+      }
       section = 'properties';
       lastKey = null;
       continue;
     }
     if (trimmed == 'Targets') {
+      if (indentation <= 2 && rootPath != null) {
+        path = rootPath;
+      }
       section = 'targets';
       lastKey = null;
       continue;
@@ -373,7 +394,7 @@ Map<String, Map<String, String>> _parseClpResources(String output) {
       lastKey = null;
       continue;
     }
-    if (section != 'properties' && section != 'targets' && rootPath != null) {
+    if (rootPath != null) {
       final nestedPath = _nestedClpPath(rootPath, trimmed);
       if (nestedPath != null) {
         path = nestedPath;
@@ -418,7 +439,10 @@ List<Map<String, Object?>> _rows(
 ) =>
     resources.entries
         .where(
-          (entry) => entry.key.startsWith(prefix) && !_notPresent(entry.value),
+          (entry) =>
+              entry.key.startsWith(prefix) &&
+              entry.value.isNotEmpty &&
+              !_notPresent(entry.value),
         )
         .map((entry) => convert(entry.key, entry.value))
         .toList();

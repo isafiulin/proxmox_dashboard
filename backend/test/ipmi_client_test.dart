@@ -38,6 +38,14 @@ FRU Device Description : Builtin FRU Device (ID 0)
       sdrOutput: sdr,
       selOutput: 'SEL has no entries',
       fruOutput: fru,
+      pohOutput: 'POH Counter  : 214 days, 20 hours',
+      lanOutput: '''
+IP Address Source       : DHCP Address
+IP Address              : 192.168.2.206
+Subnet Mask             : 255.255.255.0
+MAC Address             : 0c:c4:7a:4d:91:e9
+Default Gateway IP      : 192.168.2.100
+''',
     );
     final systems = inventory['systems'] as List<Map<String, Object?>>;
     final temperatures =
@@ -50,13 +58,20 @@ FRU Device Description : Builtin FRU Device (ID 0)
     expect((inventory['identity'] as Map)['serialNumber'], 'SYS123');
     expect(systems.single['PowerState'], 'On');
     expect((systems.single['Status'] as Map)['Health'], 'OK');
-    expect(temperatures, hasLength(2));
+    expect(temperatures, hasLength(1));
     expect(temperatures.first['ReadingCelsius'], 48);
-    expect((temperatures.last['Status'] as Map)['State'], 'Absent');
     expect(fans.single['Reading'], 1400);
     expect(thresholds.single['ReadingValue'], 12.26);
     expect(inventory['logEntries'], isEmpty);
     expect(inventory['healthIssues'], isEmpty);
+    expect(
+      ((inventory['chassis'] as List).single as Map)['PowerOnHours'],
+      5156,
+    );
+    expect(
+      ((inventory['ethernetInterfaces'] as List).single as Map)['MACAddress'],
+      '0c:c4:7a:4d:91:e9',
+    );
   });
 
   test('reports real IPMI sensor failures but ignores unavailable slots', () {

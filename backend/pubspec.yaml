@@ -1,6 +1,6 @@
 name: neotelecom_backend
 description: Backend API for NeoTelecom infrastructure dashboard.
-version: 0.3.3
+version: 0.3.4
 publish_to: none
 
 environment:

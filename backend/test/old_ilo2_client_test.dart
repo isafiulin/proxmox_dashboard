@@ -57,77 +57,57 @@ iLO 2 Advanced 1.78 at 15:43:13 Jun 10 2009
 /system1
   Targets
     cpu1
+      Properties
+        speed=3000MHz
+        number_cores=4
+        status=OK
     memory1
+      Properties
+        location=DIMM 1
+        size=4GB
+        frequency=667MHz
+        status=OK
     memory2
+      Properties
+        location=DIMM 2
+        size=Not Installed
     fan1
+      Properties
+        DeviceID=Fan 1
+        ElementName=System
+        DesiredSpeed=42 percent
+        HealthState=Ok
     fan2
+      Properties
+        DeviceID=Fan 2
+        ElementName=System
+        OperationalStatus=Not Installed
+        HealthState=Not Installed
     sensor1
+      Properties
+        DeviceID=01-Inlet Ambient
+        ElementName=System Board
+        RateUnits=Celsius
+        CurrentReading=24
+        SensorType=Temperature
+        HealthState=Ok
+    sensor2
+      Properties
+        DeviceID=VRM 1
+        ElementName=CPU 1
+        RateUnits=Volts
+        CurrentReading=N/A
+        SensorType=Voltage
+        HealthState=Ok
     powersupply1
+      Properties
+        DeviceID=Power Supply 1
+        ElementName=Power Supply Bay
+        HealthState=NonCritical
   Properties
     name=ProLiant DL360 G5
     enabledstate=enabled
     oemhp_PresentPower=222 Watts
-  Verbs
-    cd version exit show set
-cpu1
-  Targets
-  Properties
-    name=Intel Xeon
-    speed=3000MHz
-    number_cores=4
-    status=OK
-  Verbs
-    cd version exit show set
-memory1
-  Targets
-  Properties
-    location=DIMM 1
-    size=4GB
-    frequency=667MHz
-    status=OK
-  Verbs
-    cd version exit show set
-memory2
-  Targets
-  Properties
-    location=DIMM 2
-    size=Not Installed
-  Verbs
-    cd version exit show set
-fan1
-  Targets
-  Properties
-    DeviceID=Fan 1
-    ElementName=System
-    DesiredSpeed=42 percent
-    HealthState=Ok
-  Verbs
-    cd version exit show set
-fan2
-  Targets
-  Properties
-    DeviceID=Fan 2
-    ElementName=System
-    OperationalStatus=Not Installed
-    HealthState=Not Installed
-  Verbs
-    cd version exit show set
-sensor1
-  Targets
-  Properties
-    DeviceID=01-Inlet Ambient
-    ElementName=System Board
-    RateUnits=Celsius
-    CurrentReading=24
-    HealthState=Ok
-  Verbs
-    cd version exit show set
-powersupply1
-  Targets
-  Properties
-    DeviceID=Power Supply 1
-    ElementName=Power Supply Bay
-    HealthState=NonCritical
   Verbs
     cd version exit show set
 ''';
@@ -136,18 +116,14 @@ powersupply1
   Targets
     record314
     record315
+      Properties
+        number=315
+        severity=NonCritical
+        date=06/10/2020
+        time=01:58
+        description=System Power Supply: General Failure (Power Supply
+                    1)
   Properties
-  Verbs
-    cd version exit show set
-record315
-  Targets
-  Properties
-    number=315
-    severity=NonCritical
-    date=06/10/2020
-    time=01:58
-    description=System Power Supply: General Failure (Power Supply
-                 1)
   Verbs
     cd version exit show set
 ''';
@@ -166,6 +142,7 @@ record315
       'System Board · 01-Inlet Ambient',
     );
     expect((inventory['temperatures'] as List).single['ReadingCelsius'], 24);
+    expect((inventory['discreteSensors'] as List), hasLength(1));
     expect((inventory['powerSupplies'] as List), hasLength(1));
     expect(
       ((inventory['powerSupplies'] as List).single['Status'] as Map)['Health'],
