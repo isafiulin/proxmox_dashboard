@@ -12,9 +12,11 @@ void main() {
   late HttpServer server;
   late Source source;
   final requestedPaths = <String>[];
+  final requestedUris = <Uri>[];
 
   setUp(() async {
     requestedPaths.clear();
+    requestedUris.clear();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     source = Source(
       id: 'redfish-1',
@@ -28,6 +30,7 @@ void main() {
     );
     server.listen((request) async {
       requestedPaths.add(request.uri.path);
+      requestedUris.add(request.uri);
       if (request.headers.value(HttpHeaders.authorizationHeader) !=
           redfishAuthHeader('monitor:password:with-colon')) {
         request.response.statusCode = HttpStatus.unauthorized;
@@ -81,6 +84,10 @@ void main() {
     );
     expect(inventory['errors'], isEmpty);
     expect(requestedPaths, contains('/redfish/v1/Chassis/1/Thermal'));
+    expect(
+      requestedUris.firstWhere((uri) => uri.path == '/redfish/v1/').hasQuery,
+      isFalse,
+    );
 
     await client.inventory(source, 'monitor:password:with-colon');
     expect(

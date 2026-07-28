@@ -701,7 +701,10 @@ Map<String, Object?> _errorRow(
 Uri _redfishUri(String baseUrl, String path) {
   final base = Uri.parse(baseUrl);
   final relative = Uri.parse(path);
-  return base.replace(path: relative.path, query: relative.query);
+  return base.replace(
+    path: relative.path,
+    query: relative.hasQuery ? relative.query : null,
+  );
 }
 
 class RedfishApiException implements Exception {
