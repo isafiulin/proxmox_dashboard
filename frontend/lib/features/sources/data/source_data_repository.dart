@@ -204,8 +204,14 @@ class SourceDataRepository {
     return const SourceRuntimeData();
   }
 
-  Future<RedfishData> loadRedfish(String sourceId) async {
-    final data = await _map('/redfish/$sourceId/inventory');
+  Future<RedfishData> loadRedfish(
+    String sourceId, {
+    bool refresh = false,
+  }) async {
+    final path = '/redfish/$sourceId/inventory';
+    final json = refresh ? await _api.post(path) : await _api.get(path);
+    final data = _stringMap(json['data']);
+    final snapshot = _stringMap(data['_snapshot']);
     final thermal = _mapList(data['thermal']);
     final power = _mapList(data['power']);
     final temperatures = _mapList(data['temperatures']);
@@ -259,6 +265,10 @@ class SourceDataRepository {
       logEntries: _withSourceId(_mapList(data['logEntries']), sourceId),
       healthIssues: _withSourceId(_mapList(data['healthIssues']), sourceId),
       errors: _withSourceId(_mapList(data['errors']), sourceId),
+      collectedAt: DateTime.tryParse(snapshot['collectedAt']?.toString() ?? ''),
+      collecting: snapshot['collecting'] == true,
+      stale: snapshot['stale'] == true,
+      refreshError: snapshot['refreshError']?.toString(),
     );
   }
 
@@ -316,11 +326,6 @@ class SourceDataRepository {
     return <String, Object?>{};
   }
 
-  Future<Map<String, Object?>> _map(String path) async {
-    final json = await _api.get(path);
-    return _stringMap(json['data']);
-  }
-
   Future<List<Map<String, Object?>>> _guestInterfacesOptional(
     String path,
   ) async {
@@ -374,6 +379,10 @@ class RedfishData {
     required this.logEntries,
     required this.healthIssues,
     required this.errors,
+    required this.collectedAt,
+    required this.collecting,
+    required this.stale,
+    required this.refreshError,
   });
 
   final Map<String, Object?> identity;
@@ -399,6 +408,10 @@ class RedfishData {
   final List<Map<String, Object?>> logEntries;
   final List<Map<String, Object?>> healthIssues;
   final List<Map<String, Object?>> errors;
+  final DateTime? collectedAt;
+  final bool collecting;
+  final bool stale;
+  final String? refreshError;
 }
 
 class ProxmoxVeData {

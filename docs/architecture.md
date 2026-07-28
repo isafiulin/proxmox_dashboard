@@ -150,6 +150,10 @@ Backend сохраняет исторические снимки, потому �
 
 В MVP хранится rolling window за последние 7 дней. При новом сборе и при старте backend snapshots старше 7 дней удаляются. Позже нужно добавить агрегации по часу/дню для долгосрочных трендов.
 
+PostgreSQL добавляет только новые audit events и snapshots. Полная перезапись
+истории при каждом login, test или polling запрещена: она блокирует общую
+очередь сохранения и замедляет несвязанные API-запросы.
+
 ### Proxmox VE
 
 Собираемые сущности:
@@ -260,6 +264,13 @@ Snapshot имеет стабильные верхнеуровневые секц
 Redfish `Severity`, так и Huawei `MessageId`, потому что некоторые сообщения об
 ошибках приходят с `Severity: OK`.
 
+Обычный `GET inventory` читает последний успешный snapshot и не блокирует UI
+живым опросом BMC. Если данных ещё нет, первый сбор стартует в фоне. Явный
+`POST inventory` запускает ручное обновление. При временной ошибке сохраняется
+предыдущий успешный snapshot с признаком `stale` и причиной ошибки обновления.
+Одновременные сборы одного источника объединяются, а старые BMC получают не
+более двух параллельных запросов с одним повтором сетевого сбоя.
+
 Frontend предоставляет два уровня:
 
 - `/hardware-health` — общая сводка серверов, текущих проблем и событий;
@@ -320,6 +331,7 @@ GET    /api/proxmox-backup/:sourceId/tasks
 GET    /api/proxmox-backup/:sourceId/datastores/:datastore/snapshots
 
 GET    /api/redfish/:sourceId/inventory
+POST   /api/redfish/:sourceId/inventory
 
 GET    /api/guests/:guestId/backups
 GET    /api/audit-events

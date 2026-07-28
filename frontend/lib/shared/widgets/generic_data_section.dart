@@ -10,12 +10,16 @@ class GenericDataSection extends StatefulWidget {
     required this.title,
     required this.rows,
     required this.preferredColumns,
+    this.collapsible = false,
+    this.initiallyExpanded = true,
     super.key,
   });
 
   final String title;
   final List<Map<String, Object?>> rows;
   final List<String> preferredColumns;
+  final bool collapsible;
+  final bool initiallyExpanded;
 
   @override
   State<GenericDataSection> createState() => _GenericDataSectionState();
@@ -24,6 +28,7 @@ class GenericDataSection extends StatefulWidget {
 class _GenericDataSectionState extends State<GenericDataSection> {
   int? _sortColumnIndex;
   bool _sortAscending = true;
+  late bool _expanded = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -47,55 +52,81 @@ class _GenericDataSectionState extends State<GenericDataSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(widget.title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          if (widget.rows.isEmpty || columns.isEmpty)
-            const EmptyState(
-              icon: Icons.table_rows_outlined,
-              text: 'Данных пока нет.',
-            )
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                sortColumnIndex: _sortColumnIndex,
-                sortAscending: _sortAscending,
-                columns: columns.indexed
-                    .map(
-                      ((int, String) entry) => DataColumn(
-                        label: Text(entry.$2),
-                        onSort: (int columnIndex, bool ascending) {
-                          setState(() {
-                            _sortColumnIndex = columnIndex;
-                            _sortAscending = ascending;
-                          });
-                        },
-                      ),
-                    )
-                    .toList(),
-                rows: visibleRows.take(100).map((Map<String, Object?> row) {
-                  final path = _drillDownPath(row);
-                  return DataRow(
-                    onSelectChanged: path == null
-                        ? null
-                        : (_) => context.go(path),
-                    cells: columns
-                        .map(
-                          (String column) => DataCell(
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 220),
-                              child: Text(
-                                formatTableValue(column, row[column]),
-                                overflow: TextOverflow.ellipsis,
+          InkWell(
+            onTap: widget.collapsible
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Text(
+                  '${widget.rows.length}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (widget.collapsible) ...<Widget>[
+                  const SizedBox(width: 8),
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                ],
+              ],
+            ),
+          ),
+          if (_expanded) ...<Widget>[
+            const SizedBox(height: 12),
+            if (widget.rows.isEmpty || columns.isEmpty)
+              const EmptyState(
+                icon: Icons.table_rows_outlined,
+                text: 'Данных пока нет.',
+              )
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  sortColumnIndex: _sortColumnIndex,
+                  sortAscending: _sortAscending,
+                  columns: columns.indexed
+                      .map(
+                        ((int, String) entry) => DataColumn(
+                          label: Text(entry.$2),
+                          onSort: (int columnIndex, bool ascending) {
+                            setState(() {
+                              _sortColumnIndex = columnIndex;
+                              _sortAscending = ascending;
+                            });
+                          },
+                        ),
+                      )
+                      .toList(),
+                  rows: visibleRows.take(100).map((Map<String, Object?> row) {
+                    final path = _drillDownPath(row);
+                    return DataRow(
+                      onSelectChanged: path == null
+                          ? null
+                          : (_) => context.go(path),
+                      cells: columns
+                          .map(
+                            (String column) => DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 220,
+                                ),
+                                child: Text(
+                                  formatTableValue(column, row[column]),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ),
-                          ),
-                        )
-                        .toList(),
-                  );
-                }).toList(),
+                          )
+                          .toList(),
+                    );
+                  }).toList(),
+                ),
               ),
-            ),
+          ],
         ],
       ),
     );

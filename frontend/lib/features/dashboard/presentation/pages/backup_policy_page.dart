@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
+import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
 import 'package:frontend/features/sources/domain/backup_policy.dart';
 import 'package:frontend/features/sources/domain/source.dart';
@@ -137,11 +138,13 @@ class _PolicyContent extends StatelessWidget {
               label: 'Critical',
               value: '$critical',
               icon: Icons.error_outline,
+              color: critical == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
               label: 'Warnings',
               value: '$warning',
               icon: Icons.warning_amber_outlined,
+              color: warning == 0 ? AppColors.success : AppColors.warning,
             ),
             MetricCard(
               label: 'Jobs',

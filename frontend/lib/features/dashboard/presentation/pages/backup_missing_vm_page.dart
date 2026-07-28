@@ -91,6 +91,9 @@ class _BackupMissingVmContent extends StatelessWidget {
               label: 'Orphan backup groups',
               value: report.missingGroups.toString(),
               icon: Icons.report_gmailerrorred_outlined,
+              color: report.missingGroups == 0
+                  ? AppColors.success
+                  : AppColors.danger,
             ),
             MetricCard(
               label: 'PBS groups',

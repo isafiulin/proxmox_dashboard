@@ -109,6 +109,8 @@ String _errorMessage(String? code) {
     'cannot_deactivate_last_admin' =>
       'Нельзя заблокировать себя или последнего admin.',
     'invalid_source_payload' => 'Заполните название, тип и корректный URL.',
+    'redfish_unavailable' =>
+      'BMC пока недоступен, успешных данных Redfish ещё нет.',
     _ => code ?? 'Ошибка API.',
   };
 }

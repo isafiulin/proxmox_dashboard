@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/audit/presentation/cubit/audit_cubit.dart';
 import 'package:frontend/features/dashboard/data/health_data_loader.dart';
 import 'package:frontend/features/dashboard/domain/health_models.dart';
@@ -52,6 +53,7 @@ class OverviewPage extends StatelessWidget {
                       label: 'Пользователи',
                       value: '${state.items.length}',
                       icon: Icons.people_outline,
+                      color: AppColors.primaryDark,
                     );
                   },
                 ),
@@ -59,11 +61,15 @@ class OverviewPage extends StatelessWidget {
                   label: 'VM/LXC',
                   value: '${dashboardState.summary?.guests ?? 0}',
                   icon: Icons.memory_outlined,
+                  color: AppColors.success,
                 ),
                 MetricCard(
                   label: 'Критичные события',
                   value: '${dashboardState.summary?.criticalAlerts ?? 0}',
                   icon: Icons.warning_amber_outlined,
+                  color: (dashboardState.summary?.criticalAlerts ?? 0) == 0
+                      ? AppColors.success
+                      : AppColors.danger,
                 ),
               ],
             ),

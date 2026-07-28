@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
+import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
 import 'package:frontend/features/sources/domain/pbs_health.dart';
 import 'package:frontend/features/sources/domain/source.dart';
@@ -118,16 +119,23 @@ class _PbsVerifyPageState extends State<PbsVerifyPage> {
           spacing: 12,
           runSpacing: 12,
           children: <Widget>[
-            MetricCard(label: 'Verified', value: '$ok', icon: Icons.verified),
+            MetricCard(
+              label: 'Verified',
+              value: '$ok',
+              icon: Icons.verified,
+              color: AppColors.success,
+            ),
             MetricCard(
               label: 'Verify failed',
               value: '$failed',
               icon: Icons.error_outline,
+              color: failed == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
               label: 'Not verified',
               value: '$unverified',
               icon: Icons.help_outline,
+              color: unverified == 0 ? AppColors.success : AppColors.warning,
             ),
           ],
         ),

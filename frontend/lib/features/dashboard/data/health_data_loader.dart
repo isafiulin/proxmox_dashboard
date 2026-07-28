@@ -34,9 +34,15 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
   final storageResources = <Map<String, Object?>>[];
   final snapshots = <Map<String, Object?>>[];
   final errors = <Map<String, Object?>>[];
+  final healthSources = sources
+      .where(
+        (source) =>
+            source.type == 'proxmox_ve' || source.type == 'proxmox_backup',
+      )
+      .toList(growable: false);
 
   final runtimeData = await Future.wait(
-    sources.map((source) async {
+    healthSources.map((source) async {
       try {
         return await repository.load(source);
       } catch (error) {
@@ -50,8 +56,8 @@ Future<HealthRuntimeData> loadHealthRuntimeData(
     }),
   );
 
-  for (var index = 0; index < sources.length; index += 1) {
-    final source = sources[index];
+  for (var index = 0; index < healthSources.length; index += 1) {
+    final source = healthSources[index];
     final runtime = runtimeData[index];
     try {
       if (source.type == 'proxmox_ve') {

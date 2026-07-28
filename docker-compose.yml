@@ -15,8 +15,8 @@ services:
       - ./deploy/.env
     environment:
       STORE_DRIVER: postgres
-      BACKEND_VERSION: ${BACKEND_VERSION:-0.2.2}
-      FRONTEND_VERSION: ${FRONTEND_VERSION:-1.1.3+5}
+      BACKEND_VERSION: ${BACKEND_VERSION:-0.2.3}
+      FRONTEND_VERSION: ${FRONTEND_VERSION:-1.1.4+6}
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
     depends_on:
       - postgres

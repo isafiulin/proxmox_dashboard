@@ -9,7 +9,7 @@ class RedfishApiClient {
     _client
       ..connectionTimeout = const Duration(seconds: 20)
       ..idleTimeout = const Duration(seconds: 30)
-      ..maxConnectionsPerHost = 4;
+      ..maxConnectionsPerHost = 2;
     if (allowInsecureTls) {
       _client.badCertificateCallback = (_, __, ___) => true;
     }
@@ -22,6 +22,32 @@ class RedfishApiClient {
   final Map<String, Future<Map<String, Object?>>> _activeInventory = {};
 
   Future<Map<String, Object?>> get(
+    Source source,
+    String credential,
+    String path,
+  ) async {
+    for (var attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await _getOnce(source, credential, path);
+      } on RedfishApiException catch (error) {
+        if (attempt > 0 || error.statusCode != null) {
+          rethrow;
+        }
+        logger.warning('integration.redfish_request_retry', <String, Object?>{
+          'sourceId': source.id,
+          'path': path,
+          'message': error.message,
+        });
+      }
+    }
+    throw RedfishApiException(
+      'integration_request_failed',
+      sourceId: source.id,
+      path: path,
+    );
+  }
+
+  Future<Map<String, Object?>> _getOnce(
     Source source,
     String credential,
     String path,
@@ -378,10 +404,10 @@ class RedfishApiClient {
   ) async {
     final paths = links.map(_odataPath).whereType<String>().toSet().toList();
     final rows = <Map<String, Object?>>[];
-    // ponytail: four-request batches protect older BMCs; make this configurable
+    // ponytail: two-request batches protect older BMCs; make this configurable
     // only if mixed hardware proves one limit cannot serve all controllers.
-    for (var offset = 0; offset < paths.length; offset += 4) {
-      final batch = paths.skip(offset).take(4);
+    for (var offset = 0; offset < paths.length; offset += 2) {
+      final batch = paths.skip(offset).take(2);
       final results = await Future.wait(
         batch.map((memberPath) async {
           try {

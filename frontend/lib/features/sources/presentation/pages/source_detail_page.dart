@@ -76,8 +76,13 @@ class _SourceDetailContent extends StatelessWidget {
               StatusChip(status: source.status),
               const SizedBox(width: 8),
               IconButton(
-                tooltip: 'Обновить данные',
-                onPressed: () => context.read<SourceDetailCubit>().load(source),
+                tooltip: source.type == 'redfish'
+                    ? 'Опросить BMC сейчас'
+                    : 'Обновить данные',
+                onPressed: () => context.read<SourceDetailCubit>().load(
+                  source,
+                  refreshRedfish: source.type == 'redfish',
+                ),
                 icon: const Icon(Icons.refresh),
               ),
             ],
@@ -131,35 +136,169 @@ class _RedfishSections extends StatelessWidget {
               total + (int.tryParse(row['CapacityMiB']?.toString() ?? '') ?? 0),
         ) ??
         0;
+    final leftSections = <Widget>[
+      _redfishSection('Процессоры', data?.processors, const <String>[
+        'Manufacturer',
+        'Model',
+        'Socket',
+        'TotalCores',
+        'TotalThreads',
+        'MaxSpeedMHz',
+        'Status',
+      ]),
+      _redfishSection('Память', data?.memory, const <String>[
+        'DeviceLocator',
+        'Manufacturer',
+        'CapacityMiB',
+        'OperatingSpeedMhz',
+        'MemoryDeviceType',
+        'Status',
+      ]),
+      _redfishSection(
+        'RAID-контроллеры',
+        data?.storageControllers,
+        const <String>[
+          'Name',
+          'Model',
+          'FirmwareVersion',
+          'SpeedGbps',
+          'MemorySizeMiB',
+          'Status',
+        ],
+      ),
+      _redfishSection('RAID volumes', data?.volumes, const <String>[
+        'Name',
+        'VolumeName',
+        'VolumeRaidLevel',
+        'CapacityBytes',
+        'AccessPolicy',
+        'Status',
+      ]),
+      _redfishSection('Физические диски', data?.drives, const <String>[
+        'Name',
+        'Manufacturer',
+        'Model',
+        'MediaType',
+        'Protocol',
+        'CapacityBytes',
+        'TemperatureCelsius',
+        'FailurePredicted',
+        'Status',
+      ]),
+      _redfishSection('Firmware inventory', data?.firmware, const <String>[
+        'Name',
+        'Version',
+        'Updateable',
+        'Status',
+      ]),
+    ];
+    final rightSections = <Widget>[
+      _redfishSection('Температуры', data?.temperatures, const <String>[
+        'Name',
+        'ReadingCelsius',
+        'UpperThresholdCritical',
+        'UpperThresholdFatal',
+        'Status',
+      ]),
+      _redfishSection('Вентиляторы', data?.fans, const <String>[
+        'Name',
+        'Reading',
+        'ReadingUnits',
+        'Status',
+      ]),
+      _redfishSection('Блоки питания', data?.powerSupplies, const <String>[
+        'Name',
+        'Model',
+        'LineInputVoltage',
+        'PowerInputWatts',
+        'PowerOutputWatts',
+        'PowerCapacityWatts',
+        'Status',
+      ]),
+      _redfishSection('Последние события BMC', data?.logEntries, const <String>[
+        'Created',
+        'normalizedSeverity',
+        'Message',
+        'MessageId',
+      ]),
+      _redfishSection('Сетевые порты', data?.ethernetInterfaces, const <String>[
+        'Id',
+        'MACAddress',
+        'SpeedMbps',
+        'LinkStatus',
+        'InterfaceEnabled',
+        'Status',
+      ]),
+      _redfishSection('Сетевые адаптеры', data?.networkAdapters, const <String>[
+        'Name',
+        'Manufacturer',
+        'Model',
+        'Status',
+      ]),
+      _redfishSection('Платы', data?.boards, const <String>[
+        'Name',
+        'Manufacturer',
+        'Model',
+        'Status',
+      ]),
+      _redfishSection(
+        'BMC discrete sensors (raw)',
+        data?.discreteSensors,
+        const <String>['Name', 'Status'],
+      ),
+      _redfishSection(
+        'BMC threshold sensors (raw)',
+        data?.thresholdSensors,
+        const <String>['Name', 'ReadingValue', 'ReadingUnits', 'Status'],
+      ),
+      _redfishSection('BMC controller', data?.managers, const <String>[
+        'Name',
+        'Model',
+        'FirmwareVersion',
+        'DateTime',
+        'DateTimeLocalOffset',
+        'Status',
+      ]),
+    ];
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: <Widget>[
-            MetricCard(
-              label: 'Модель',
-              value: identity['model']?.toString() ?? 'unknown',
-              icon: Icons.developer_board_outlined,
-            ),
-            MetricCard(
-              label: 'Power',
-              value: system?['PowerState']?.toString() ?? 'unknown',
-              icon: Icons.power_settings_new,
-            ),
-            MetricCard(
-              label: 'Health',
-              value: health ?? 'unknown',
-              icon: Icons.health_and_safety_outlined,
-            ),
-            MetricCard(
-              label: 'CPU / RAM',
-              value:
-                  '${data?.processors.length ?? 0} / ${(totalMemoryMiB / 1024).toStringAsFixed(0)} GiB',
-              icon: Icons.memory_outlined,
-            ),
-          ],
+        AppCard(
+          child: Row(
+            children: <Widget>[
+              Icon(
+                data?.stale == true
+                    ? Icons.warning_amber_outlined
+                    : Icons.schedule_outlined,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  data?.stale == true
+                      ? 'Показан последний успешный snapshot. Новое обновление BMC завершилось ошибкой.'
+                      : data?.collecting == true
+                      ? 'Первый сбор Redfish выполняется в фоне. Обновите страницу через несколько секунд.'
+                      : data?.collectedAt == null
+                      ? 'Ожидается первый сбор Redfish.'
+                      : 'Данные собраны: ${_formatDateTime(data!.collectedAt)}',
+                ),
+              ),
+            ],
+          ),
         ),
+        const SizedBox(height: 16),
+        _HardwareStatusStrip(
+          model: identity['model']?.toString() ?? 'unknown',
+          power: system?['PowerState']?.toString() ?? 'unknown',
+          health: health ?? 'unknown',
+          cpuAndRam:
+              '${data?.processors.length ?? 0} CPU · ${(totalMemoryMiB / 1024).toStringAsFixed(0)} GiB',
+        ),
+        const SizedBox(height: 16),
+        _HardwareOverview(data: data),
+        const SizedBox(height: 16),
+        _TemperatureDashboard(rows: data?.temperatures ?? const []),
         const SizedBox(height: 16),
         GenericDataSection(
           title: 'Текущие неисправности',
@@ -170,201 +309,7 @@ class _RedfishSections extends StatelessWidget {
             'health',
             'state',
           ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Процессоры',
-          rows: data?.processors ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Manufacturer',
-            'Model',
-            'Socket',
-            'TotalCores',
-            'TotalThreads',
-            'MaxSpeedMHz',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Память',
-          rows: data?.memory ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'DeviceLocator',
-            'Manufacturer',
-            'CapacityMiB',
-            'OperatingSpeedMhz',
-            'MemoryDeviceType',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Температуры',
-          rows: data?.temperatures ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'ReadingCelsius',
-            'UpperThresholdCritical',
-            'UpperThresholdFatal',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Вентиляторы',
-          rows: data?.fans ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Reading',
-            'ReadingUnits',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Блоки питания',
-          rows: data?.powerSupplies ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Model',
-            'LineInputVoltage',
-            'PowerInputWatts',
-            'PowerOutputWatts',
-            'PowerCapacityWatts',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'RAID-контроллеры',
-          rows: data?.storageControllers ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Model',
-            'FirmwareVersion',
-            'SpeedGbps',
-            'MemorySizeMiB',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'RAID volumes',
-          rows: data?.volumes ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'VolumeName',
-            'VolumeRaidLevel',
-            'CapacityBytes',
-            'AccessPolicy',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Физические диски',
-          rows: data?.drives ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Manufacturer',
-            'Model',
-            'MediaType',
-            'Protocol',
-            'CapacityBytes',
-            'TemperatureCelsius',
-            'HoursOfPoweredUp',
-            'FirmwareStatus',
-            'FailurePredicted',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Сетевые порты',
-          rows: data?.ethernetInterfaces ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Id',
-            'MACAddress',
-            'SpeedMbps',
-            'LinkStatus',
-            'InterfaceEnabled',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Сетевые адаптеры',
-          rows: data?.networkAdapters ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Manufacturer',
-            'Model',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Firmware inventory',
-          rows: data?.firmware ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Version',
-            'Updateable',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Последние события BMC',
-          rows: data?.logEntries ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Created',
-            'normalizedSeverity',
-            'Message',
-            'MessageId',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'Платы',
-          rows: data?.boards ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Manufacturer',
-            'Model',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'BMC discrete sensors (raw)',
-          rows: data?.discreteSensors ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>['Name', 'Status'],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'BMC threshold sensors (raw)',
-          rows: data?.thresholdSensors ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'ReadingValue',
-            'ReadingUnits',
-            'Status',
-          ],
-        ),
-        const SizedBox(height: 16),
-        GenericDataSection(
-          title: 'BMC controller',
-          rows: data?.managers ?? <Map<String, Object?>>[],
-          preferredColumns: const <String>[
-            'Name',
-            'Model',
-            'FirmwareVersion',
-            'DateTime',
-            'DateTimeLocalOffset',
-            'Status',
-          ],
+          collapsible: true,
         ),
         if (data?.errors.isNotEmpty == true) ...<Widget>[
           const SizedBox(height: 16),
@@ -377,11 +322,594 @@ class _RedfishSections extends StatelessWidget {
               'statusCode',
               'message',
             ],
+            collapsible: true,
           ),
         ],
+        const SizedBox(height: 16),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            if (constraints.maxWidth >= 1100) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(child: _sectionColumn(leftSections)),
+                  const SizedBox(width: 16),
+                  Expanded(child: _sectionColumn(rightSections)),
+                ],
+              );
+            }
+            return _sectionColumn(<Widget>[...leftSections, ...rightSections]);
+          },
+        ),
       ],
     );
   }
+}
+
+class _HardwareStatusStrip extends StatelessWidget {
+  const _HardwareStatusStrip({
+    required this.model,
+    required this.power,
+    required this.health,
+    required this.cpuAndRam,
+  });
+
+  final String model;
+  final String power;
+  final String health;
+  final String cpuAndRam;
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = <Widget>[
+      _StatusMetric(
+        label: 'Модель сервера',
+        value: model,
+        icon: Icons.dns_outlined,
+        color: AppColors.primary,
+      ),
+      _StatusMetric(
+        label: 'Питание',
+        value: power,
+        icon: Icons.power_settings_new,
+        color: power.toLowerCase() == 'on'
+            ? AppColors.success
+            : AppColors.warning,
+      ),
+      _StatusMetric(
+        label: 'Общее состояние',
+        value: health,
+        icon: Icons.health_and_safety_outlined,
+        color: _healthColor(health),
+      ),
+      _StatusMetric(
+        label: 'Вычислительные ресурсы',
+        value: cpuAndRam,
+        icon: Icons.memory_outlined,
+        color: AppColors.primaryDark,
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 900) {
+          return Row(
+            children: <Widget>[
+              for (var index = 0; index < cards.length; index += 1) ...[
+                if (index > 0) const SizedBox(width: 12),
+                Expanded(child: cards[index]),
+              ],
+            ],
+          );
+        }
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: cards
+              .map(
+                (card) => SizedBox(
+                  width: constraints.maxWidth >= 560
+                      ? (constraints.maxWidth - 12) / 2
+                      : constraints.maxWidth,
+                  child: card,
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _StatusMetric extends StatelessWidget {
+  const _StatusMetric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 106,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: color.withValues(alpha: 0.18),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text(label, style: const TextStyle(color: Colors.white70)),
+                const SizedBox(height: 8),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Icon(icon, color: Colors.white70, size: 40),
+        ],
+      ),
+    );
+  }
+}
+
+class _HardwareOverview extends StatelessWidget {
+  const _HardwareOverview({required this.data});
+
+  final RedfishData? data;
+
+  @override
+  Widget build(BuildContext context) {
+    final resources = <Map<String, Object?>>[
+      ...?data?.processors,
+      ...?data?.memory,
+      ...?data?.fans,
+      ...?data?.powerSupplies,
+      ...?data?.storageControllers,
+      ...?data?.drives,
+    ];
+    final healthy = resources.where((row) => _rowHealth(row) == 'OK').length;
+    final ratio = resources.isEmpty ? 0.0 : healthy / resources.length;
+    final health = data?.systems.firstOrNull?['Status'];
+    final overall = health is Map ? health['Health']?.toString() : null;
+    final componentRows = <({String name, IconData icon, String status})>[
+      (
+        name: 'Процессоры',
+        icon: Icons.memory_outlined,
+        status: _aggregateHealth(data?.processors),
+      ),
+      (
+        name: 'Память',
+        icon: Icons.view_module_outlined,
+        status: _aggregateHealth(data?.memory),
+      ),
+      (
+        name: 'Вентиляторы',
+        icon: Icons.air,
+        status: _aggregateHealth(data?.fans),
+      ),
+      (
+        name: 'Блоки питания',
+        icon: Icons.electrical_services_outlined,
+        status: _aggregateHealth(data?.powerSupplies),
+      ),
+      (
+        name: 'RAID и диски',
+        icon: Icons.storage_outlined,
+        status: _aggregateHealth(<Map<String, Object?>>[
+          ...?data?.storageControllers,
+          ...?data?.drives,
+        ]),
+      ),
+      (
+        name: 'Сетевые порты',
+        icon: Icons.lan_outlined,
+        status: _aggregateHealth(data?.ethernetInterfaces),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final summary = AppCard(
+          child: Row(
+            children: <Widget>[
+              SizedBox(
+                width: 118,
+                height: 118,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    SizedBox.expand(
+                      child: CircularProgressIndicator(
+                        value: ratio,
+                        strokeWidth: 13,
+                        strokeCap: StrokeCap.round,
+                        color: _healthColor(overall),
+                        backgroundColor: AppColors.border,
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          '${(ratio * 100).round()}%',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const Text(
+                          'исправно',
+                          style: TextStyle(color: AppColors.mutedInk),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Общий статус',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      overall ?? 'unknown',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: _healthColor(overall),
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '$healthy из ${resources.length} компонентов без ошибок',
+                      style: const TextStyle(color: AppColors.mutedInk),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+        final components = AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Состояние компонентов',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: componentRows.length,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 230,
+                  mainAxisExtent: 66,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemBuilder: (context, index) {
+                  final item = componentRows[index];
+                  final color = _healthColor(item.status);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: color.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Icon(item.icon, color: color, size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              Text(
+                                item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                item.status,
+                                style: TextStyle(
+                                  color: color,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+        if (constraints.maxWidth >= 1000) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(flex: 2, child: summary),
+              const SizedBox(width: 16),
+              Expanded(flex: 3, child: components),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[summary, const SizedBox(height: 16), components],
+        );
+      },
+    );
+  }
+}
+
+class _TemperatureDashboard extends StatelessWidget {
+  const _TemperatureDashboard({required this.rows});
+
+  final List<Map<String, Object?>> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.device_thermostat_outlined),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Температурные датчики',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Text(
+                '${rows.length}',
+                style: const TextStyle(color: AppColors.mutedInk),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (rows.isEmpty)
+            const EmptyState(
+              icon: Icons.device_thermostat_outlined,
+              text: 'Температурные датчики не найдены.',
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: rows.length,
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 245,
+                mainAxisExtent: 112,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              itemBuilder: (context, index) =>
+                  _TemperatureGauge(row: rows[index]),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TemperatureGauge extends StatelessWidget {
+  const _TemperatureGauge({required this.row});
+
+  final Map<String, Object?> row;
+
+  @override
+  Widget build(BuildContext context) {
+    final reading =
+        _number(row['ReadingCelsius']) ?? _number(row['ReadingValue']) ?? 0;
+    final critical =
+        _number(row['UpperThresholdCritical']) ??
+        _number(row['UpperThresholdFatal']);
+    final ratio = critical == null || critical <= 0
+        ? 0.0
+        : (reading / critical).clamp(0.0, 1.0);
+    final color = _temperatureColor(row, reading, critical);
+    final name =
+        row['Name']?.toString() ?? 'Temperature ${row['MemberId'] ?? ''}';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 66,
+            height: 66,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                SizedBox.expand(
+                  child: CircularProgressIndicator(
+                    value: ratio,
+                    strokeWidth: 7,
+                    strokeCap: StrokeCap.round,
+                    color: color,
+                    backgroundColor: AppColors.border,
+                  ),
+                ),
+                Text(
+                  '${reading.toStringAsFixed(0)}°',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  critical == null
+                      ? _rowHealth(row)
+                      : 'critical ${critical.toStringAsFixed(0)}°C',
+                  style: const TextStyle(
+                    color: AppColors.mutedInk,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _aggregateHealth(List<Map<String, Object?>>? rows) {
+  if (rows == null || rows.isEmpty) {
+    return 'Нет данных';
+  }
+  final health = rows.map(_rowHealth).toList();
+  if (health.any((value) => value == 'CRITICAL')) {
+    return 'Critical';
+  }
+  if (health.any((value) => value == 'WARNING')) {
+    return 'Warning';
+  }
+  if (health.every((value) => value == 'OK')) {
+    return 'OK';
+  }
+  return 'Unknown';
+}
+
+String _rowHealth(Map<String, Object?> row) {
+  final status = row['Status'];
+  final value = status is Map
+      ? status['Health'] ?? status['HealthRollup'] ?? status['State']
+      : status;
+  final normalized = value?.toString().trim().toUpperCase() ?? '';
+  if (normalized == 'OK' || normalized == 'ENABLED' || normalized == 'NORMAL') {
+    return 'OK';
+  }
+  if (normalized.contains('CRITICAL') || normalized.contains('FAILED')) {
+    return 'CRITICAL';
+  }
+  if (normalized.contains('WARN') || normalized.contains('DEGRADED')) {
+    return 'WARNING';
+  }
+  return 'UNKNOWN';
+}
+
+Color _healthColor(String? value) {
+  final normalized = value?.trim().toLowerCase() ?? '';
+  if (normalized == 'ok' || normalized == 'normal' || normalized == 'enabled') {
+    return AppColors.success;
+  }
+  if (normalized.contains('critical') ||
+      normalized.contains('failed') ||
+      normalized.contains('error')) {
+    return AppColors.danger;
+  }
+  if (normalized.contains('warn') || normalized.contains('degraded')) {
+    return AppColors.warning;
+  }
+  return AppColors.mutedInk;
+}
+
+Color _temperatureColor(
+  Map<String, Object?> row,
+  double reading,
+  double? critical,
+) {
+  final health = _rowHealth(row);
+  if (health == 'CRITICAL' || (critical != null && reading >= critical)) {
+    return AppColors.danger;
+  }
+  if (health == 'WARNING' ||
+      (critical != null && reading >= critical * 0.85)) {
+    return AppColors.warning;
+  }
+  return AppColors.success;
+}
+
+double? _number(Object? value) => double.tryParse(value?.toString() ?? '');
+
+Widget _redfishSection(
+  String title,
+  List<Map<String, Object?>>? rows,
+  List<String> columns, {
+  bool expanded = false,
+}) {
+  return GenericDataSection(
+    title: title,
+    rows: rows ?? <Map<String, Object?>>[],
+    preferredColumns: columns,
+    collapsible: true,
+    initiallyExpanded: expanded,
+  );
+}
+
+Widget _sectionColumn(List<Widget> sections) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      for (var index = 0; index < sections.length; index += 1) ...<Widget>[
+        if (index > 0) const SizedBox(height: 16),
+        sections[index],
+      ],
+    ],
+  );
 }
 
 class _ProxmoxVeSections extends StatelessWidget {

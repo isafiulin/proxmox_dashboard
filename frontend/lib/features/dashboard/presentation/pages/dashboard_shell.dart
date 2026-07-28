@@ -342,28 +342,36 @@ class _SidebarNavigation extends StatelessWidget {
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Row(
-                mainAxisAlignment: collapsed
-                    ? MainAxisAlignment.center
-                    : MainAxisAlignment.spaceBetween,
-                children: <Widget>[
-                  const Icon(Icons.dns_outlined, color: AppColors.primary),
-                  if (!collapsed)
-                    Text(
-                      'NeoTelecom',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleMedium?.copyWith(color: Colors.white),
-                    ),
-                  if (onToggle != null)
-                    IconButton(
-                      tooltip: collapsed ? 'Развернуть меню' : 'Свернуть меню',
-                      color: AppColors.sidebarMuted,
+              child: collapsed
+                  ? IconButton(
+                      tooltip: onToggle == null
+                          ? 'NeoTelecom'
+                          : 'Развернуть меню',
+                      color: AppColors.primary,
                       onPressed: onToggle,
-                      icon: Icon(collapsed ? Icons.menu_open : Icons.menu),
+                      icon: const Icon(Icons.dns_outlined),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        const Icon(
+                          Icons.dns_outlined,
+                          color: AppColors.primary,
+                        ),
+                        Text(
+                          'NeoTelecom',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: Colors.white),
+                        ),
+                        if (onToggle != null)
+                          IconButton(
+                            tooltip: 'Свернуть меню',
+                            color: AppColors.sidebarMuted,
+                            onPressed: onToggle,
+                            icon: const Icon(Icons.menu),
+                          ),
+                      ],
                     ),
-                ],
-              ),
             ),
             Expanded(
               child: ListView(

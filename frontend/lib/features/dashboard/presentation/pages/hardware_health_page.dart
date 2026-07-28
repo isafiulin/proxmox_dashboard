@@ -118,6 +118,8 @@ class _HardwareHealthContent extends StatelessWidget {
             'serialNumber',
             'powerState',
             'health',
+            'collectionState',
+            'collectedAt',
             'processors',
             'memoryGiB',
             'issues',
@@ -220,6 +222,8 @@ class _HardwareReport {
         'serialNumber': data.identity['serialNumber'],
         'powerState': system?['PowerState'],
         'health': health,
+        'collectionState': data.collecting ? 'collecting' : 'ready',
+        'collectedAt': data.collectedAt?.toLocal().toString(),
         'processors': data.processors.length,
         'memoryGiB': memoryMiB / 1024,
         'issues': data.healthIssues.length,
@@ -258,6 +262,13 @@ class _HardwareReport {
           (row) => <String, Object?>{'source': item.source.name, ...row},
         ),
       );
+      if (data.stale) {
+        errors.add(<String, Object?>{
+          'source': item.source.name,
+          'operation': 'refresh',
+          'message': data.refreshError ?? 'Не удалось обновить данные BMC.',
+        });
+      }
     }
     final events = eventGroups.values.toList()
       ..sort(

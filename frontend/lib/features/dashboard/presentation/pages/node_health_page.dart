@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/dashboard/data/health_data_loader.dart';
 import 'package:frontend/features/dashboard/domain/health_models.dart';
 import 'package:frontend/features/snapshots/domain/resource_history.dart';
@@ -99,21 +100,29 @@ class _NodeHealthContent extends StatelessWidget {
               label: 'Online',
               value: report.online.toString(),
               icon: Icons.check_circle_outline,
+              color: AppColors.success,
             ),
             MetricCard(
               label: 'Offline/unknown',
               value: report.offline.toString(),
               icon: Icons.warning_amber_outlined,
+              color: report.offline == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
               label: 'CPU > 80%',
               value: report.highCpu.toString(),
               icon: Icons.speed_outlined,
+              color: report.highCpu == 0
+                  ? AppColors.success
+                  : AppColors.warning,
             ),
             MetricCard(
               label: 'RAM > 80%',
               value: report.highRam.toString(),
               icon: Icons.memory_outlined,
+              color: report.highRam == 0
+                  ? AppColors.success
+                  : AppColors.warning,
             ),
           ],
         ),

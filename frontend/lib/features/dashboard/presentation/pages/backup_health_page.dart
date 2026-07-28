@@ -177,21 +177,27 @@ class _BackupHealthContent extends StatelessWidget {
               label: 'Проблемы',
               value: report.issues.length.toString(),
               icon: Icons.report_problem_outlined,
+              color: report.issues.isEmpty
+                  ? AppColors.success
+                  : AppColors.danger,
             ),
             MetricCard(
               label: 'Без backup',
               value: missing.toString(),
               icon: Icons.backup_outlined,
+              color: missing == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
               label: 'Старше 7 дней',
               value: critical.toString(),
               icon: Icons.schedule_outlined,
+              color: critical == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
               label: 'Root без namespace',
               value: namespaceGaps.toString(),
               icon: Icons.drive_folder_upload_outlined,
+              color: namespaceGaps == 0 ? AppColors.success : AppColors.warning,
             ),
             MetricCard(
               label: 'Всего VM/LXC',

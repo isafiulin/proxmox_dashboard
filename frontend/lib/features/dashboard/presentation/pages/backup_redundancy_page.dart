@@ -206,16 +206,21 @@ class _BackupRedundancyContent extends StatelessWidget {
               label: 'Redundancy issues',
               value: report.issues.length.toString(),
               icon: Icons.security_outlined,
+              color: report.issues.isEmpty
+                  ? AppColors.success
+                  : AppColors.danger,
             ),
             MetricCard(
               label: 'Без backup',
               value: missing.toString(),
               icon: Icons.backup_outlined,
+              color: missing == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
               label: 'Только 1 location',
               value: singleServer.toString(),
               icon: Icons.warning_amber_outlined,
+              color: singleServer == 0 ? AppColors.success : AppColors.warning,
             ),
             MetricCard(
               label: 'PBS источников',

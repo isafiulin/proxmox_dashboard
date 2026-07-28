@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
+import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
 import 'package:frontend/shared/widgets/app_card.dart';
 import 'package:frontend/shared/widgets/async_state_view.dart';
@@ -91,11 +92,19 @@ class CollectionMetricsPage extends StatelessWidget {
               label: 'Errors',
               value: '${metrics.totalErrors}',
               icon: Icons.error_outline,
+              color: metrics.totalErrors == 0
+                  ? AppColors.success
+                  : AppColors.danger,
             ),
             MetricCard(
               label: 'Success rate',
               value: '${(successRate * 100).round()}%',
               icon: Icons.query_stats_outlined,
+              color: successRate >= 0.99
+                  ? AppColors.success
+                  : successRate >= 0.9
+                  ? AppColors.warning
+                  : AppColors.danger,
             ),
           ],
         ),

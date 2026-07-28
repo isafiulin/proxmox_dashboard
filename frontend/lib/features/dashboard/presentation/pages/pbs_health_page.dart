@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:frontend/core/api/api_client.dart';
+import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
 import 'package:frontend/features/sources/domain/pbs_health.dart';
 import 'package:frontend/features/sources/domain/source.dart';
@@ -155,16 +156,21 @@ class _PbsHealthContent extends StatelessWidget {
               label: 'Usage >= 90%',
               value: highUsage.toString(),
               icon: Icons.data_usage_outlined,
+              color: highUsage == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
               label: 'Failed tasks',
               value: report.failedTasks.length.toString(),
               icon: Icons.error_outline,
+              color: report.failedTasks.isEmpty
+                  ? AppColors.success
+                  : AppColors.danger,
             ),
             MetricCard(
               label: 'Maintenance jobs',
               value: report.jobs.length.toString(),
               icon: Icons.schedule_outlined,
+              color: AppColors.primaryDark,
             ),
           ],
         ),

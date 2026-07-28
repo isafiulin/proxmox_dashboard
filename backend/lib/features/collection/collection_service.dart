@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:neotelecom_backend/core/extensions/iterable_extensions.dart';
 import 'package:neotelecom_backend/core/store/app_store.dart';
 import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/audit/audit_service.dart';
@@ -22,6 +23,7 @@ class CollectionService {
   final AuditService _audit;
   final AppLogger _logger;
   Timer? _timer;
+  final Map<String, Future<DataSnapshot>> _activeCollections = {};
 
   void start() {
     _timer?.cancel();
@@ -51,7 +53,10 @@ class CollectionService {
   Future<void> collectAll({required String actorUserId}) async {
     await Future.wait(
       List<Source>.from(_store.sources).map(
-        (source) => _collectSource(actorUserId: actorUserId, source: source),
+        (source) => _collectSourceOnce(
+          actorUserId: actorUserId,
+          source: source,
+        ),
       ),
     );
     await _store.save();
@@ -61,10 +66,117 @@ class CollectionService {
     required String actorUserId,
     required Source source,
   }) async {
-    final snapshot =
-        await _collectSource(actorUserId: actorUserId, source: source);
+    final snapshot = await _collectSourceOnce(
+      actorUserId: actorUserId,
+      source: source,
+    );
     await _store.save();
     return snapshot;
+  }
+
+  Future<DataSnapshot> collectSourceById({
+    required String actorUserId,
+    required String sourceId,
+  }) async {
+    final source =
+        _store.sources.where((item) => item.id == sourceId).firstOrNull;
+    if (source == null) {
+      throw const CollectionException('source_not_found');
+    }
+    return collectSource(actorUserId: actorUserId, source: source);
+  }
+
+  Future<Map<String, Object?>> redfishSnapshot(
+    String sourceId, {
+    required String actorUserId,
+    bool refresh = false,
+  }) async {
+    final source =
+        _store.sources.where((item) => item.id == sourceId).firstOrNull;
+    if (source == null) {
+      throw const CollectionException('source_not_found');
+    }
+    if (source.type != 'redfish') {
+      throw const CollectionException('source_type_mismatch');
+    }
+    var snapshot = latestSuccessfulSnapshot(
+      _store.dataSnapshots.where(
+        (item) => !item.collectedAt.isBefore(source.updatedAt),
+      ),
+      sourceId,
+      'redfish',
+    );
+    if (snapshot == null && !refresh) {
+      unawaited(_collectRedfishInBackground(actorUserId, sourceId));
+      return <String, Object?>{
+        '_snapshot': <String, Object?>{'collecting': true, 'stale': false},
+      };
+    }
+    final latestAttempt = latest(sourceId: sourceId)
+        .where(
+          (item) =>
+              item.sourceType == 'redfish' &&
+              !item.collectedAt.isBefore(source.updatedAt),
+        )
+        .firstOrNull;
+    String? refreshError;
+    if (latestAttempt != null &&
+        latestAttempt.sourceType == 'redfish' &&
+        latestAttempt.status != 'ok' &&
+        (snapshot == null ||
+            latestAttempt.collectedAt.isAfter(snapshot.collectedAt))) {
+      refreshError = latestAttempt.payload['error']?.toString();
+    }
+    if (refresh || snapshot == null) {
+      final collected = await collectSourceById(
+        actorUserId: actorUserId,
+        sourceId: sourceId,
+      );
+      if (collected.status == 'ok') {
+        snapshot = collected;
+      } else {
+        refreshError = collected.payload['error']?.toString();
+      }
+    }
+    if (snapshot == null) {
+      throw const CollectionException('redfish_unavailable');
+    }
+    return <String, Object?>{
+      ...snapshot.payload,
+      '_snapshot': <String, Object?>{
+        'collectedAt': snapshot.collectedAt.toIso8601String(),
+        'stale': refreshError != null,
+        if (refreshError != null) 'refreshError': refreshError,
+      },
+    };
+  }
+
+  Future<void> _collectRedfishInBackground(
+    String actorUserId,
+    String sourceId,
+  ) async {
+    try {
+      await collectSourceById(actorUserId: actorUserId, sourceId: sourceId);
+    } on Object catch (error) {
+      _logger.error(
+        'collection.background_error',
+        <String, Object?>{'sourceId': sourceId},
+        error: error,
+      );
+    }
+  }
+
+  Future<DataSnapshot> _collectSourceOnce({
+    required String actorUserId,
+    required Source source,
+  }) {
+    final active = _activeCollections[source.id];
+    if (active != null) {
+      return active;
+    }
+    final request = _collectSource(actorUserId: actorUserId, source: source);
+    _activeCollections[source.id] = request;
+    return request.whenComplete(() => _activeCollections.remove(source.id));
   }
 
   Future<DataSnapshot> _collectSource({
@@ -245,6 +357,33 @@ class CollectionService {
       ),
     };
   }
+}
+
+class CollectionException implements Exception {
+  const CollectionException(this.code);
+
+  final String code;
+}
+
+DataSnapshot? latestSuccessfulSnapshot(
+  Iterable<DataSnapshot> snapshots,
+  String sourceId,
+  String sourceType,
+) {
+  return snapshots
+      .where(
+        (snapshot) =>
+            snapshot.sourceId == sourceId &&
+            snapshot.sourceType == sourceType &&
+            snapshot.status == 'ok',
+      )
+      .fold<DataSnapshot?>(
+        null,
+        (latest, snapshot) =>
+            latest == null || snapshot.collectedAt.isAfter(latest.collectedAt)
+                ? snapshot
+                : latest,
+      );
 }
 
 void pruneExpiredSnapshots(List<DataSnapshot> snapshots, {DateTime? now}) {

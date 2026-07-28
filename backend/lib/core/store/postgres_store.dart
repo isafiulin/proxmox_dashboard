@@ -7,12 +7,26 @@ import 'package:neotelecom_backend/features/sources/source.dart';
 import 'package:neotelecom_backend/features/users/user.dart';
 import 'package:postgres/postgres.dart';
 
+List<T> unsavedItems<T>(
+  Iterable<T> items,
+  Set<String> savedIds,
+  Object? Function(T item) idOf,
+) {
+  return items
+      .where((item) => !savedIds.contains(idOf(item)?.toString()))
+      .toList(growable: false);
+}
+
+Set<String> _ids<T>(Iterable<T> items, Object? Function(T item) idOf) =>
+    items.map(idOf).whereType<Object>().map((id) => id.toString()).toSet();
+
 class PostgresStore implements AppStore {
   PostgresStore(this._connection);
 
   final Connection _connection;
   Future<void> _saveQueue = Future<void>.value();
-  String _savedSnapshotIds = '';
+  final Set<String> _savedAuditEventIds = <String>{};
+  final Set<String> _savedSnapshotIds = <String>{};
 
   @override
   final users = <User>[];
@@ -42,7 +56,8 @@ class PostgresStore implements AppStore {
     await _loadAuditEvents();
     await _loadDataSnapshots();
     await _loadSettings();
-    _savedSnapshotIds = _snapshotIds();
+    _savedAuditEventIds.addAll(_ids(auditEvents, (event) => event['id']));
+    _savedSnapshotIds.addAll(dataSnapshots.map((snapshot) => snapshot.id));
   }
 
   @override
@@ -53,18 +68,28 @@ class PostgresStore implements AppStore {
   }
 
   Future<void> _save() async {
-    final snapshotIds = _snapshotIds();
-    final snapshotsChanged = snapshotIds != _savedSnapshotIds;
+    final usersToSave = List<User>.of(users);
+    final sourcesToSave = List<Source>.of(sources);
+    final newAuditEvents = unsavedItems(
+      auditEvents,
+      _savedAuditEventIds,
+      (event) => event['id'],
+    );
+    final snapshotsToSave = unsavedItems(
+      dataSnapshots,
+      _savedSnapshotIds,
+      (snapshot) => snapshot.id,
+    );
+    final settingsToSave = settings;
+    final snapshotCutoff = DateTime.now().toUtc().subtract(
+          const Duration(days: 7),
+        );
     await _connection.runTx((Session session) async {
-      await session.execute('DELETE FROM audit_events');
-      if (snapshotsChanged) {
-        await session.execute('DELETE FROM data_snapshots');
-      }
       await session.execute('DELETE FROM system_settings');
       await session.execute('DELETE FROM sources');
       await session.execute('DELETE FROM users');
 
-      for (final User user in users) {
+      for (final User user in usersToSave) {
         await session.execute(
           Sql.named('''
             INSERT INTO users (
@@ -90,7 +115,7 @@ class PostgresStore implements AppStore {
         );
       }
 
-      for (final Source source in sources) {
+      for (final Source source in sourcesToSave) {
         await session.execute(
           Sql.named('''
             INSERT INTO sources (
@@ -121,7 +146,7 @@ class PostgresStore implements AppStore {
         );
       }
 
-      for (final Map<String, Object?> event in auditEvents) {
+      for (final Map<String, Object?> event in newAuditEvents) {
         await session.execute(
           Sql.named('''
             INSERT INTO audit_events (
@@ -141,43 +166,50 @@ class PostgresStore implements AppStore {
         );
       }
 
-      if (snapshotsChanged) {
-        for (final DataSnapshot snapshot in dataSnapshots) {
-          await session.execute(
-            Sql.named('''
+      for (final DataSnapshot snapshot in snapshotsToSave) {
+        await session.execute(
+          Sql.named('''
             INSERT INTO data_snapshots (
               id, source_id, source_type, status, payload, collected_at
             ) VALUES (
               @id, @sourceId, @sourceType, @status, @payload::jsonb, @collectedAt
             )
           '''),
-            parameters: <String, Object?>{
-              'id': snapshot.id,
-              'sourceId': snapshot.sourceId,
-              'sourceType': snapshot.sourceType,
-              'status': snapshot.status,
-              'payload': jsonEncode(snapshot.payload),
-              'collectedAt': snapshot.collectedAt,
-            },
-          );
-        }
+          parameters: <String, Object?>{
+            'id': snapshot.id,
+            'sourceId': snapshot.sourceId,
+            'sourceType': snapshot.sourceType,
+            'status': snapshot.status,
+            'payload': jsonEncode(snapshot.payload),
+            'collectedAt': snapshot.collectedAt,
+          },
+        );
       }
+      // ponytail: snapshots are removed only by the fixed retention window.
+      // Track explicit deletions if arbitrary snapshot removal is introduced.
+      await session.execute(
+        Sql.named('DELETE FROM data_snapshots WHERE collected_at < @cutoff'),
+        parameters: <String, Object?>{'cutoff': snapshotCutoff},
+      );
 
       await session.execute(
         Sql.named('''
           INSERT INTO system_settings (id, data)
           VALUES ('singleton', @data::jsonb)
         '''),
-        parameters: <String, Object?>{'data': jsonEncode(settings.toJson())},
+        parameters: <String, Object?>{
+          'data': jsonEncode(settingsToSave.toJson()),
+        },
       );
     });
-    _savedSnapshotIds = snapshotIds;
-  }
-
-  String _snapshotIds() {
-    // ponytail: snapshots are immutable today, so IDs are a sufficient dirty
-    // check. Replace this with a revision counter if snapshot mutation appears.
-    return dataSnapshots.map((snapshot) => snapshot.id).join('\n');
+    _savedAuditEventIds.addAll(_ids(newAuditEvents, (event) => event['id']));
+    final currentSnapshotIds =
+        dataSnapshots.map((snapshot) => snapshot.id).toSet();
+    _savedSnapshotIds
+      ..removeWhere(
+        (id) => !currentSnapshotIds.contains(id),
+      )
+      ..addAll(snapshotsToSave.map((snapshot) => snapshot.id));
   }
 
   @override

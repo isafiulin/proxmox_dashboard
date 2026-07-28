@@ -29,7 +29,10 @@ class AppTheme {
         displayColor: AppColors.ink,
       ),
       cardTheme: const CardThemeData(
-        elevation: 0,
+        elevation: 1,
+        color: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Color(0x160A1020),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(AppRadii.md)),
           side: BorderSide(color: AppColors.border),
@@ -37,12 +40,34 @@ class AppTheme {
       ),
       dividerTheme: const DividerThemeData(color: AppColors.border, space: 1),
       dataTableTheme: const DataTableThemeData(
-        headingRowColor: WidgetStatePropertyAll(AppColors.scaffold),
+        headingRowColor: WidgetStatePropertyAll(AppColors.surfaceAlt),
         headingRowHeight: 44,
         dataRowMinHeight: 42,
         dataRowMaxHeight: 52,
         horizontalMargin: 16,
         columnSpacing: 28,
+        dividerThickness: 0.7,
+        headingTextStyle: TextStyle(
+          color: AppColors.mutedInk,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: AppColors.surface,
+        selectedColor: AppColors.primary,
+        side: const BorderSide(color: AppColors.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+        ),
+        labelStyle: const TextStyle(color: AppColors.ink),
+        secondaryLabelStyle: const TextStyle(color: Colors.white),
+      ),
+      listTileTheme: const ListTileThemeData(
+        iconColor: AppColors.primary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(AppRadii.sm)),
+        ),
       ),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(

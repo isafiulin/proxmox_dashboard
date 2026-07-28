@@ -129,6 +129,9 @@ class App {
     } on SourceInputException catch (error) {
       await sendJson(request, {'error': error.code},
           statusCode: _statusForInputError(error.code));
+    } on CollectionException catch (error) {
+      await sendJson(request, {'error': error.code},
+          statusCode: _statusForInputError(error.code));
     } on InfrastructureReadException catch (error) {
       await sendJson(request, {'error': error.code},
           statusCode: _statusForInputError(error.code));
@@ -187,10 +190,10 @@ class App {
       return sendJson(request, {
         'status': databaseHealthy ? 'ok' : 'degraded',
         'service': 'neotelecom-backend',
-        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.2',
-        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.2',
+        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.3',
+        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.3',
         'frontendVersion':
-            Platform.environment['FRONTEND_VERSION'] ?? '1.1.3+5',
+            Platform.environment['FRONTEND_VERSION'] ?? '1.1.4+6',
         'gitCommit': Platform.environment['GIT_COMMIT'] ?? 'unknown',
         'time': now.toIso8601String(),
         'startedAt': startedAt.toIso8601String(),
@@ -502,9 +505,13 @@ class App {
     final redfishRoute = RegExp(
       r'^/api/redfish/([^/]+)/inventory$',
     ).firstMatch(path);
-    if (redfishRoute != null && method == 'GET') {
+    if (redfishRoute != null && (method == 'GET' || method == 'POST')) {
       return sendJson(request, {
-        'data': await infrastructure.redfishInventory(redfishRoute.group(1)!),
+        'data': await collection.redfishSnapshot(
+          redfishRoute.group(1)!,
+          actorUserId: currentUser.id,
+          refresh: method == 'POST',
+        ),
       });
     }
 
@@ -520,6 +527,7 @@ int _statusForInputError(String code) {
     'invalid_guest_type' ||
     'invalid_settings_payload' =>
       HttpStatus.badRequest,
+    'redfish_unavailable' => HttpStatus.badGateway,
     'email_already_exists' => HttpStatus.conflict,
     _ => HttpStatus.badRequest,
   };

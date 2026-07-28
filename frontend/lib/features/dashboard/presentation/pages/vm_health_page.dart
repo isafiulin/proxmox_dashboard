@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/dashboard/data/health_data_loader.dart';
 import 'package:frontend/features/dashboard/domain/health_models.dart';
 import 'package:frontend/features/snapshots/domain/resource_history.dart';
@@ -95,26 +96,39 @@ class _VmHealthContent extends StatelessWidget {
               label: 'Running',
               value: report.running.toString(),
               icon: Icons.play_circle_outline,
+              color: AppColors.success,
             ),
             MetricCard(
               label: 'Stopped/other',
               value: report.stopped.toString(),
               icon: Icons.pause_circle_outline,
+              color: report.stopped == 0
+                  ? AppColors.success
+                  : AppColors.warning,
             ),
             MetricCard(
               label: 'CPU > 80%',
               value: report.highCpu.toString(),
               icon: Icons.speed_outlined,
+              color: report.highCpu == 0
+                  ? AppColors.success
+                  : AppColors.warning,
             ),
             MetricCard(
               label: 'RAM > 80%',
               value: report.highRam.toString(),
               icon: Icons.memory_outlined,
+              color: report.highRam == 0
+                  ? AppColors.success
+                  : AppColors.warning,
             ),
             MetricCard(
               label: 'Backup issues',
               value: report.backupIssues.toString(),
               icon: Icons.backup_outlined,
+              color: report.backupIssues == 0
+                  ? AppColors.success
+                  : AppColors.danger,
             ),
           ],
         ),
