@@ -161,6 +161,21 @@ void main() {
     );
   });
 
+  test('source service accepts old iLO 2 SSH source', () async {
+    final actor = users.list().single;
+
+    final source = await sources.create(
+      actorUserId: actor.id,
+      name: 'legacy-ilo',
+      type: 'old_ilo2',
+      baseUrl: 'ssh://192.168.55.10',
+      token: 'monitor:secret-password',
+    );
+
+    expect(source.type, 'old_ilo2');
+    expect(await sources.credentialFor(source.id), 'monitor:secret-password');
+  });
+
   test('collection retention keeps only the last seven days', () {
     final now = DateTime.utc(2026, 6, 4, 12);
     final snapshots = <DataSnapshot>[

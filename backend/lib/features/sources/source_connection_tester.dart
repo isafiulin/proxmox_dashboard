@@ -3,16 +3,20 @@ import 'dart:io';
 
 import 'package:neotelecom_backend/features/integrations/proxmox_auth_header.dart';
 import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
+import 'package:neotelecom_backend/features/integrations/old_ilo2_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 
 class SourceConnectionTester {
   SourceConnectionTester({
     required this.allowInsecureTls,
     required RedfishApiClient redfishClient,
-  }) : _redfishClient = redfishClient;
+    OldIlo2Client? oldIlo2Client,
+  })  : _redfishClient = redfishClient,
+        _oldIlo2Client = oldIlo2Client;
 
   final bool allowInsecureTls;
   final RedfishApiClient _redfishClient;
+  final OldIlo2Client? _oldIlo2Client;
 
   Future<ConnectionTestResult> test(Source source, String credential) async {
     if (source.type == 'proxmox_ve') {
@@ -24,12 +28,44 @@ class SourceConnectionTester {
     if (source.type == 'redfish') {
       return _testRedfish(source, credential);
     }
+    if (source.type == 'old_ilo2') {
+      return _testOldIlo2(source, credential);
+    }
 
     return const ConnectionTestResult(
       ok: false,
       status: 'critical',
       message: 'Unsupported source type.',
     );
+  }
+
+  Future<ConnectionTestResult> _testOldIlo2(
+    Source source,
+    String credential,
+  ) async {
+    final client = _oldIlo2Client;
+    if (client == null) {
+      return const ConnectionTestResult(
+        ok: false,
+        status: 'critical',
+        message: 'Old iLO 2 client is not configured.',
+      );
+    }
+    try {
+      final output = await client.systemSummary(source, credential);
+      final model = RegExp(r'name=(.+)').firstMatch(output)?.group(1)?.trim();
+      return ConnectionTestResult(
+        ok: true,
+        status: 'ok',
+        message: 'Connected to old iLO 2${model == null ? '' : '. $model'}',
+      );
+    } on Object catch (error) {
+      return ConnectionTestResult(
+        ok: false,
+        status: 'critical',
+        message: error.toString(),
+      );
+    }
   }
 
   Future<ConnectionTestResult> _testRedfish(

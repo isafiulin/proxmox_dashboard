@@ -265,6 +265,11 @@ class _SourceDialogState extends State<SourceDialog> {
                   label: Text('Redfish'),
                   icon: Icon(Icons.developer_board_outlined),
                 ),
+                ButtonSegment<String>(
+                  value: 'old_ilo2',
+                  label: Text('iLO 2'),
+                  icon: Icon(Icons.dns_outlined),
+                ),
               ],
               selected: <String>{type},
               onSelectionChanged: (Set<String> value) =>
@@ -273,7 +278,13 @@ class _SourceDialogState extends State<SourceDialog> {
             const SizedBox(height: 14),
             AppTextField(controller: nameController, label: 'Название'),
             const SizedBox(height: 12),
-            AppTextField(controller: urlController, label: 'Base URL'),
+            AppTextField(
+              controller: urlController,
+              label: type == 'old_ilo2' ? 'SSH URL' : 'Base URL',
+              helperText: type == 'old_ilo2'
+                  ? 'Формат: ssh://192.168.55.10'
+                  : null,
+            ),
             const SizedBox(height: 12),
             if (type == 'proxmox_ve') ...<Widget>[
               AppTextField(
@@ -286,10 +297,12 @@ class _SourceDialogState extends State<SourceDialog> {
             ],
             AppTextField(
               controller: tokenController,
-              label: type == 'redfish' ? 'Логин и пароль' : 'API token',
+              label: type == 'redfish' || type == 'old_ilo2'
+                  ? 'Логин и пароль'
+                  : 'API token',
               helperText: editing
                   ? 'Оставьте пустым, чтобы не менять credentials.'
-                  : type == 'redfish'
+                  : type == 'redfish' || type == 'old_ilo2'
                   ? 'Формат: username:password'
                   : 'PVE: user@realm!tokenid=secret · PBS: user@realm!tokenid:secret',
               obscureText: !tokenVisible,

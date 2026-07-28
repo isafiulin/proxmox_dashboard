@@ -17,7 +17,9 @@ class HardwareHealthPage extends StatelessWidget {
     return BlocBuilder<SourcesCubit, SourcesState>(
       builder: (context, state) {
         final sources = state.items
-            .where((source) => source.type == 'redfish')
+            .where(
+              (source) => source.type == 'redfish' || source.type == 'old_ilo2',
+            )
             .toList();
         if (state.status == SourcesStatus.loading && sources.isEmpty) {
           return const LoadingStateView();
@@ -25,7 +27,7 @@ class HardwareHealthPage extends StatelessWidget {
         if (sources.isEmpty) {
           return const EmptyCardState(
             icon: Icons.developer_board_outlined,
-            text: 'Redfish-серверы пока не добавлены.',
+            text: 'BMC-серверы пока не добавлены.',
           );
         }
         return FutureBuilder<_HardwareReport>(
@@ -56,7 +58,10 @@ class HardwareHealthPage extends StatelessWidget {
         try {
           return _LoadedRedfish(
             source: source,
-            data: await repository.loadRedfish(source.id),
+            data: await repository.loadRedfish(
+              source.id,
+              sourceType: source.type,
+            ),
           );
         } on Object catch (error) {
           return _LoadedRedfish(source: source, error: error.toString());
@@ -153,7 +158,7 @@ class _HardwareHealthContent extends StatelessWidget {
         if (report.integrationErrors.isNotEmpty) ...<Widget>[
           const SizedBox(height: 16),
           GenericDataSection(
-            title: 'Redfish API errors',
+            title: 'Ошибки интеграции BMC',
             rows: report.integrationErrors,
             preferredColumns: const <String>[
               'source',

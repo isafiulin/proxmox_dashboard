@@ -198,8 +198,10 @@ class SourceDataRepository {
         proxmoxBackup: await loadProxmoxBackup(source.id),
       );
     }
-    if (source.type == 'redfish') {
-      return SourceRuntimeData(redfish: await loadRedfish(source.id));
+    if (source.type == 'redfish' || source.type == 'old_ilo2') {
+      return SourceRuntimeData(
+        redfish: await loadRedfish(source.id, sourceType: source.type),
+      );
     }
     return const SourceRuntimeData();
   }
@@ -207,8 +209,10 @@ class SourceDataRepository {
   Future<RedfishData> loadRedfish(
     String sourceId, {
     bool refresh = false,
+    String sourceType = 'redfish',
   }) async {
-    final path = '/redfish/$sourceId/inventory';
+    final prefix = sourceType == 'old_ilo2' ? 'old-ilo2' : 'redfish';
+    final path = '/$prefix/$sourceId/inventory';
     final json = refresh ? await _api.post(path) : await _api.get(path);
     final data = _stringMap(json['data']);
     final snapshot = _stringMap(data['_snapshot']);

@@ -11,6 +11,7 @@ import 'features/dashboard/dashboard_service.dart';
 import 'features/integrations/infrastructure_read_service.dart';
 import 'features/integrations/proxmox_api_client.dart';
 import 'features/integrations/redfish_api_client.dart';
+import 'features/integrations/old_ilo2_client.dart';
 import 'features/settings/settings_service.dart';
 import 'features/sources/source_connection_tester.dart';
 import 'features/sources/sources_service.dart';
@@ -67,6 +68,7 @@ class App {
       allowInsecureTls: allowInsecureTls,
       logger: logger,
     );
+    final oldIlo2Client = OldIlo2Client(logger: logger);
     final sourcesService = SourcesService(
       store,
       audit,
@@ -74,12 +76,14 @@ class App {
       SourceConnectionTester(
         allowInsecureTls: allowInsecureTls,
         redfishClient: redfishClient,
+        oldIlo2Client: oldIlo2Client,
       ),
     );
     final infrastructure = InfrastructureReadService(
       sourcesService,
       proxmoxClient,
       redfishClient,
+      oldIlo2Client,
       logger,
     );
     final collection = CollectionService(store, infrastructure, audit, logger);
@@ -509,6 +513,19 @@ class App {
       return sendJson(request, {
         'data': await collection.redfishSnapshot(
           redfishRoute.group(1)!,
+          actorUserId: currentUser.id,
+          refresh: method == 'POST',
+        ),
+      });
+    }
+
+    final oldIlo2Route = RegExp(
+      r'^/api/old-ilo2/([^/]+)/inventory$',
+    ).firstMatch(path);
+    if (oldIlo2Route != null && (method == 'GET' || method == 'POST')) {
+      return sendJson(request, {
+        'data': await collection.redfishSnapshot(
+          oldIlo2Route.group(1)!,
           actorUserId: currentUser.id,
           refresh: method == 'POST',
         ),

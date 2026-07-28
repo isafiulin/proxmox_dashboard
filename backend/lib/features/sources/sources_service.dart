@@ -38,7 +38,8 @@ class SourcesService {
     if (normalizedName.isEmpty ||
         !Source.allowedTypes.contains(type) ||
         !_isValidSourceUrl(normalizedUrl, type) ||
-        (type == 'redfish' && !isValidRedfishCredential(normalizedToken))) {
+        ((type == 'redfish' || type == 'old_ilo2') &&
+            !isValidRedfishCredential(normalizedToken))) {
       throw const SourceInputException('invalid_source_payload');
     }
 
@@ -74,7 +75,7 @@ class SourcesService {
         : await _credentialsCipher.decrypt(source.credential);
     if (!Source.allowedTypes.contains(effectiveType) ||
         !_isValidSourceUrl(effectiveUrl, effectiveType) ||
-        (effectiveType == 'redfish' &&
+        ((effectiveType == 'redfish' || effectiveType == 'old_ilo2') &&
             !isValidRedfishCredential(effectiveCredential))) {
       throw const SourceInputException('invalid_source_payload');
     }
@@ -143,6 +144,9 @@ class SourcesService {
 
 bool _isValidSourceUrl(String value, String type) {
   final uri = Uri.tryParse(value);
+  if (type == 'old_ilo2') {
+    return uri != null && uri.scheme == 'ssh' && uri.host.isNotEmpty;
+  }
   final valid = uri != null &&
       (uri.scheme == 'http' || uri.scheme == 'https') &&
       uri.host.isNotEmpty;

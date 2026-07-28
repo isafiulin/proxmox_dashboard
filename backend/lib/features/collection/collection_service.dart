@@ -96,7 +96,7 @@ class CollectionService {
     if (source == null) {
       throw const CollectionException('source_not_found');
     }
-    if (source.type != 'redfish') {
+    if (source.type != 'redfish' && source.type != 'old_ilo2') {
       throw const CollectionException('source_type_mismatch');
     }
     var snapshot = latestSuccessfulSnapshot(
@@ -104,7 +104,7 @@ class CollectionService {
         (item) => !item.collectedAt.isBefore(source.updatedAt),
       ),
       sourceId,
-      'redfish',
+      source.type,
     );
     if (snapshot == null && !refresh) {
       unawaited(_collectRedfishInBackground(actorUserId, sourceId));
@@ -115,13 +115,13 @@ class CollectionService {
     final latestAttempt = latest(sourceId: sourceId)
         .where(
           (item) =>
-              item.sourceType == 'redfish' &&
+              item.sourceType == source.type &&
               !item.collectedAt.isBefore(source.updatedAt),
         )
         .firstOrNull;
     String? refreshError;
     if (latestAttempt != null &&
-        latestAttempt.sourceType == 'redfish' &&
+        latestAttempt.sourceType == source.type &&
         latestAttempt.status != 'ok' &&
         (snapshot == null ||
             latestAttempt.collectedAt.isAfter(snapshot.collectedAt))) {
@@ -259,6 +259,9 @@ class CollectionService {
     }
     if (source.type == 'redfish') {
       return _infrastructure.redfishInventory(source.id);
+    }
+    if (source.type == 'old_ilo2') {
+      return _infrastructure.oldIlo2Inventory(source.id);
     }
     throw StateError('unsupported_source_type: ${source.type}');
   }

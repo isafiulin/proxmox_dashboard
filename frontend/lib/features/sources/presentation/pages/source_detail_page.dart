@@ -58,7 +58,8 @@ class _SourceDetailContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controllerUrl = source.type == 'redfish'
+    final isHardware = source.type == 'redfish' || source.type == 'old_ilo2';
+    final controllerUrl = isHardware
         ? _controllerBrowserUri(source.baseUrl)
         : null;
     return Column(
@@ -75,7 +76,7 @@ class _SourceDetailContent extends StatelessWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (source.type == 'redfish') ...<Widget>[
+              if (isHardware) ...<Widget>[
                 OutlinedButton.icon(
                   onPressed: controllerUrl == null
                       ? null
@@ -93,12 +94,10 @@ class _SourceDetailContent extends StatelessWidget {
               StatusChip(status: source.status),
               const SizedBox(width: 8),
               IconButton(
-                tooltip: source.type == 'redfish'
-                    ? 'Опросить BMC сейчас'
-                    : 'Обновить данные',
+                tooltip: isHardware ? 'Опросить BMC сейчас' : 'Обновить данные',
                 onPressed: () => context.read<SourceDetailCubit>().load(
                   source,
-                  refreshRedfish: source.type == 'redfish',
+                  refreshRedfish: isHardware,
                 ),
                 icon: const Icon(Icons.refresh),
               ),
@@ -124,7 +123,7 @@ class _SourceDetailContent extends StatelessWidget {
             if (source.type == 'proxmox_backup') {
               return _ProxmoxBackupSections(data: state.data?.proxmoxBackup);
             }
-            if (source.type == 'redfish') {
+            if (isHardware) {
               return _RedfishSections(data: state.data?.redfish);
             }
             return const SizedBox.shrink();
@@ -137,6 +136,9 @@ class _SourceDetailContent extends StatelessWidget {
 
 Uri? _controllerBrowserUri(String baseUrl) {
   final uri = Uri.tryParse(baseUrl.trim());
+  if (uri != null && uri.scheme == 'ssh' && uri.host.isNotEmpty) {
+    return Uri(scheme: 'https', host: uri.host);
+  }
   if (uri == null ||
       !uri.hasAuthority ||
       (uri.scheme != 'http' && uri.scheme != 'https')) {
@@ -305,9 +307,9 @@ class _RedfishSections extends StatelessWidget {
                   data?.stale == true
                       ? 'Показан последний успешный snapshot. Новое обновление BMC завершилось ошибкой.'
                       : data?.collecting == true
-                      ? 'Первый сбор Redfish выполняется в фоне. Обновите страницу через несколько секунд.'
+                      ? 'Первый сбор BMC выполняется в фоне. Обновите страницу через несколько секунд.'
                       : data?.collectedAt == null
-                      ? 'Ожидается первый сбор Redfish.'
+                      ? 'Ожидается первый сбор BMC.'
                       : 'Данные собраны: ${_formatDateTime(data!.collectedAt)}',
                 ),
               ),

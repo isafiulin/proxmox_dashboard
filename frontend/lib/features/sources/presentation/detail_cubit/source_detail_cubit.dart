@@ -14,9 +14,15 @@ class SourceDetailCubit extends Cubit<SourceDetailState> {
   Future<void> load(Source source, {bool refreshRedfish = false}) async {
     emit(state.copyWith(status: SourceDetailStatus.loading));
     try {
-      final data = source.type == 'redfish' && refreshRedfish
+      final data =
+          (source.type == 'redfish' || source.type == 'old_ilo2') &&
+              refreshRedfish
           ? SourceRuntimeData(
-              redfish: await _repository.loadRedfish(source.id, refresh: true),
+              redfish: await _repository.loadRedfish(
+                source.id,
+                refresh: true,
+                sourceType: source.type,
+              ),
             )
           : await _repository.load(source);
       emit(SourceDetailState(status: SourceDetailStatus.ready, data: data));

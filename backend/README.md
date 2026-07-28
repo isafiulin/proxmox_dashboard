@@ -11,6 +11,7 @@ Dart API service for the infrastructure dashboard.
 - encrypted credentials;
 - Proxmox VE API adapter;
 - Proxmox Backup Server API adapter;
+- Redfish and legacy HP iLO 2 hardware adapters;
 - normalized read models for the frontend;
 - polling workers;
 - audit log;
@@ -47,6 +48,8 @@ Supported token formats:
 ```text
 Proxmox VE: user@realm!tokenid=secret
 PBS:        user@realm!tokenid:secret
+Redfish:    username:password
+Old iLO 2:  username:password (source URL: ssh://host)
 ```
 
 ## Suggested package layout
