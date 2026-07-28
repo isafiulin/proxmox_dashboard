@@ -96,7 +96,9 @@ class CollectionService {
     if (source == null) {
       throw const CollectionException('source_not_found');
     }
-    if (source.type != 'redfish' && source.type != 'old_ilo2') {
+    if (source.type != 'redfish' &&
+        source.type != 'old_ilo2' &&
+        source.type != 'ipmi') {
       throw const CollectionException('source_type_mismatch');
     }
     var snapshot = latestSuccessfulSnapshot(
@@ -139,7 +141,9 @@ class CollectionService {
       }
     }
     if (snapshot == null) {
-      throw const CollectionException('redfish_unavailable');
+      throw CollectionException(
+        source.type == 'redfish' ? 'redfish_unavailable' : 'bmc_unavailable',
+      );
     }
     return <String, Object?>{
       ...snapshot.payload,
@@ -262,6 +266,9 @@ class CollectionService {
     }
     if (source.type == 'old_ilo2') {
       return _infrastructure.oldIlo2Inventory(source.id);
+    }
+    if (source.type == 'ipmi') {
+      return _infrastructure.ipmiInventory(source.id);
     }
     throw StateError('unsupported_source_type: ${source.type}');
   }

@@ -18,7 +18,10 @@ class HardwareHealthPage extends StatelessWidget {
       builder: (context, state) {
         final sources = state.items
             .where(
-              (source) => source.type == 'redfish' || source.type == 'old_ilo2',
+              (source) =>
+                  source.type == 'redfish' ||
+                  source.type == 'old_ilo2' ||
+                  source.type == 'ipmi',
             )
             .toList();
         if (state.status == SourcesStatus.loading && sources.isEmpty) {

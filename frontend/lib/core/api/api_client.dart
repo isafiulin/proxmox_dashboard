@@ -111,6 +111,8 @@ String _errorMessage(String? code) {
     'invalid_source_payload' => 'Заполните название, тип и корректный URL.',
     'redfish_unavailable' =>
       'BMC пока недоступен, успешных данных Redfish ещё нет.',
+    'bmc_unavailable' =>
+      'BMC пока недоступен, успешных данных мониторинга ещё нет.',
     _ => code ?? 'Ошибка API.',
   };
 }

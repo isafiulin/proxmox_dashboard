@@ -50,6 +50,7 @@ Proxmox VE: user@realm!tokenid=secret
 PBS:        user@realm!tokenid:secret
 Redfish:    username:password
 Old iLO 2:  username:password (source URL: ssh://host)
+IPMI 2.0:   username:password (source URL: ipmi://host)
 ```
 
 ## Suggested package layout

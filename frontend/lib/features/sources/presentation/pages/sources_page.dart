@@ -248,41 +248,55 @@ class _SourceDialogState extends State<SourceDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SegmentedButton<String>(
-              segments: const <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'proxmox_ve',
-                  label: Text('Proxmox VE'),
-                  icon: Icon(Icons.memory_outlined),
-                ),
-                ButtonSegment<String>(
-                  value: 'proxmox_backup',
-                  label: Text('Backup'),
-                  icon: Icon(Icons.backup_outlined),
-                ),
-                ButtonSegment<String>(
-                  value: 'redfish',
-                  label: Text('Redfish'),
-                  icon: Icon(Icons.developer_board_outlined),
-                ),
-                ButtonSegment<String>(
-                  value: 'old_ilo2',
-                  label: Text('iLO 2'),
-                  icon: Icon(Icons.dns_outlined),
-                ),
-              ],
-              selected: <String>{type},
-              onSelectionChanged: (Set<String> value) =>
-                  setState(() => type = value.first),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SegmentedButton<String>(
+                segments: const <ButtonSegment<String>>[
+                  ButtonSegment<String>(
+                    value: 'proxmox_ve',
+                    label: Text('Proxmox VE'),
+                    icon: Icon(Icons.memory_outlined),
+                  ),
+                  ButtonSegment<String>(
+                    value: 'proxmox_backup',
+                    label: Text('Backup'),
+                    icon: Icon(Icons.backup_outlined),
+                  ),
+                  ButtonSegment<String>(
+                    value: 'redfish',
+                    label: Text('Redfish'),
+                    icon: Icon(Icons.developer_board_outlined),
+                  ),
+                  ButtonSegment<String>(
+                    value: 'old_ilo2',
+                    label: Text('iLO 2'),
+                    icon: Icon(Icons.dns_outlined),
+                  ),
+                  ButtonSegment<String>(
+                    value: 'ipmi',
+                    label: Text('IPMI'),
+                    icon: Icon(Icons.sensors_outlined),
+                  ),
+                ],
+                selected: <String>{type},
+                onSelectionChanged: (Set<String> value) =>
+                    setState(() => type = value.first),
+              ),
             ),
             const SizedBox(height: 14),
             AppTextField(controller: nameController, label: 'Название'),
             const SizedBox(height: 12),
             AppTextField(
               controller: urlController,
-              label: type == 'old_ilo2' ? 'SSH URL' : 'Base URL',
+              label: type == 'old_ilo2'
+                  ? 'SSH URL'
+                  : type == 'ipmi'
+                  ? 'IPMI URL'
+                  : 'Base URL',
               helperText: type == 'old_ilo2'
                   ? 'Формат: ssh://192.168.55.10'
+                  : type == 'ipmi'
+                  ? 'Формат: ipmi://192.168.2.206'
                   : null,
             ),
             const SizedBox(height: 12),
@@ -297,12 +311,12 @@ class _SourceDialogState extends State<SourceDialog> {
             ],
             AppTextField(
               controller: tokenController,
-              label: type == 'redfish' || type == 'old_ilo2'
+              label: type == 'redfish' || type == 'old_ilo2' || type == 'ipmi'
                   ? 'Логин и пароль'
                   : 'API token',
               helperText: editing
                   ? 'Оставьте пустым, чтобы не менять credentials.'
-                  : type == 'redfish' || type == 'old_ilo2'
+                  : type == 'redfish' || type == 'old_ilo2' || type == 'ipmi'
                   ? 'Формат: username:password'
                   : 'PVE: user@realm!tokenid=secret · PBS: user@realm!tokenid:secret',
               obscureText: !tokenVisible,

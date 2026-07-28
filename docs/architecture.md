@@ -119,7 +119,7 @@ Docker Compose использует `STORE_DRIVER=postgres`.
 Источник данных:
 
 - `id`;
-- `type`: `proxmox_ve`, `proxmox_backup`, `redfish`, `old_ilo2`;
+- `type`: `proxmox_ve`, `proxmox_backup`, `redfish`, `old_ilo2`, `ipmi`;
 - `name`;
 - `base_url`;
 - `status`;

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:neotelecom_backend/features/integrations/proxmox_auth_header.dart';
 import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
 import 'package:neotelecom_backend/features/integrations/old_ilo2_client.dart';
+import 'package:neotelecom_backend/features/integrations/ipmi_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 
 class SourceConnectionTester {
@@ -11,12 +12,15 @@ class SourceConnectionTester {
     required this.allowInsecureTls,
     required RedfishApiClient redfishClient,
     OldIlo2Client? oldIlo2Client,
+    IpmiClient? ipmiClient,
   })  : _redfishClient = redfishClient,
-        _oldIlo2Client = oldIlo2Client;
+        _oldIlo2Client = oldIlo2Client,
+        _ipmiClient = ipmiClient;
 
   final bool allowInsecureTls;
   final RedfishApiClient _redfishClient;
   final OldIlo2Client? _oldIlo2Client;
+  final IpmiClient? _ipmiClient;
 
   Future<ConnectionTestResult> test(Source source, String credential) async {
     if (source.type == 'proxmox_ve') {
@@ -31,12 +35,47 @@ class SourceConnectionTester {
     if (source.type == 'old_ilo2') {
       return _testOldIlo2(source, credential);
     }
+    if (source.type == 'ipmi') {
+      return _testIpmi(source, credential);
+    }
 
     return const ConnectionTestResult(
       ok: false,
       status: 'critical',
       message: 'Unsupported source type.',
     );
+  }
+
+  Future<ConnectionTestResult> _testIpmi(
+    Source source,
+    String credential,
+  ) async {
+    final client = _ipmiClient;
+    if (client == null) {
+      return const ConnectionTestResult(
+        ok: false,
+        status: 'critical',
+        message: 'IPMI client is not configured.',
+      );
+    }
+    try {
+      final output = await client.controllerInfo(source, credential);
+      final product = RegExp(r'Product Name\s*:\s*(.+)')
+          .firstMatch(output)
+          ?.group(1)
+          ?.trim();
+      return ConnectionTestResult(
+        ok: true,
+        status: 'ok',
+        message: 'Connected over IPMI${product == null ? '' : '. $product'}',
+      );
+    } on Object catch (error) {
+      return ConnectionTestResult(
+        ok: false,
+        status: 'critical',
+        message: error.toString(),
+      );
+    }
   }
 
   Future<ConnectionTestResult> _testOldIlo2(

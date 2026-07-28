@@ -15,7 +15,9 @@ class SourceDetailCubit extends Cubit<SourceDetailState> {
     emit(state.copyWith(status: SourceDetailStatus.loading));
     try {
       final data =
-          (source.type == 'redfish' || source.type == 'old_ilo2') &&
+          (source.type == 'redfish' ||
+                  source.type == 'old_ilo2' ||
+                  source.type == 'ipmi') &&
               refreshRedfish
           ? SourceRuntimeData(
               redfish: await _repository.loadRedfish(

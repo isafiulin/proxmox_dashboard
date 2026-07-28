@@ -12,6 +12,7 @@ import 'features/integrations/infrastructure_read_service.dart';
 import 'features/integrations/proxmox_api_client.dart';
 import 'features/integrations/redfish_api_client.dart';
 import 'features/integrations/old_ilo2_client.dart';
+import 'features/integrations/ipmi_client.dart';
 import 'features/settings/settings_service.dart';
 import 'features/sources/source_connection_tester.dart';
 import 'features/sources/sources_service.dart';
@@ -69,6 +70,7 @@ class App {
       logger: logger,
     );
     final oldIlo2Client = OldIlo2Client(logger: logger);
+    final ipmiClient = IpmiClient(logger: logger);
     final sourcesService = SourcesService(
       store,
       audit,
@@ -77,6 +79,7 @@ class App {
         allowInsecureTls: allowInsecureTls,
         redfishClient: redfishClient,
         oldIlo2Client: oldIlo2Client,
+        ipmiClient: ipmiClient,
       ),
     );
     final infrastructure = InfrastructureReadService(
@@ -84,6 +87,7 @@ class App {
       proxmoxClient,
       redfishClient,
       oldIlo2Client,
+      ipmiClient,
       logger,
     );
     final collection = CollectionService(store, infrastructure, audit, logger);
@@ -194,10 +198,10 @@ class App {
       return sendJson(request, {
         'status': databaseHealthy ? 'ok' : 'degraded',
         'service': 'neotelecom-backend',
-        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.4',
-        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.4',
+        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.5',
+        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.5',
         'frontendVersion':
-            Platform.environment['FRONTEND_VERSION'] ?? '1.1.5+7',
+            Platform.environment['FRONTEND_VERSION'] ?? '1.1.6+8',
         'gitCommit': Platform.environment['GIT_COMMIT'] ?? 'unknown',
         'time': now.toIso8601String(),
         'startedAt': startedAt.toIso8601String(),
@@ -532,6 +536,19 @@ class App {
       });
     }
 
+    final ipmiRoute = RegExp(
+      r'^/api/ipmi/([^/]+)/inventory$',
+    ).firstMatch(path);
+    if (ipmiRoute != null && (method == 'GET' || method == 'POST')) {
+      return sendJson(request, {
+        'data': await collection.redfishSnapshot(
+          ipmiRoute.group(1)!,
+          actorUserId: currentUser.id,
+          refresh: method == 'POST',
+        ),
+      });
+    }
+
     return sendJson(request, {'error': 'not_found', 'path': path},
         statusCode: HttpStatus.notFound);
   }
@@ -544,7 +561,7 @@ int _statusForInputError(String code) {
     'invalid_guest_type' ||
     'invalid_settings_payload' =>
       HttpStatus.badRequest,
-    'redfish_unavailable' => HttpStatus.badGateway,
+    'redfish_unavailable' || 'bmc_unavailable' => HttpStatus.badGateway,
     'email_already_exists' => HttpStatus.conflict,
     _ => HttpStatus.badRequest,
   };

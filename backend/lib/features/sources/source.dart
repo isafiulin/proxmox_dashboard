@@ -64,6 +64,7 @@ class Source {
     'proxmox_backup',
     'redfish',
     'old_ilo2',
+    'ipmi',
   };
 
   final String id;

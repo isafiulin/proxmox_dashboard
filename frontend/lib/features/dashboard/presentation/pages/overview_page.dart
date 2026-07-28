@@ -757,6 +757,7 @@ IconData sourceIcon(String type) {
     'proxmox_backup' => Icons.backup_outlined,
     'redfish' => Icons.developer_board_outlined,
     'old_ilo2' => Icons.dns_outlined,
+    'ipmi' => Icons.sensors_outlined,
     _ => Icons.storage_outlined,
   };
 }
@@ -767,6 +768,7 @@ String sourceTypeLabel(String type) {
     'proxmox_backup' => 'Proxmox Backup Server',
     'redfish' => 'BMC / Redfish',
     'old_ilo2' => 'Old HP iLO 2',
+    'ipmi' => 'IPMI 2.0',
     _ => type,
   };
 }

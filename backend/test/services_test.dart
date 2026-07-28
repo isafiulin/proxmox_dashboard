@@ -176,6 +176,21 @@ void main() {
     expect(await sources.credentialFor(source.id), 'monitor:secret-password');
   });
 
+  test('source service accepts IPMI source', () async {
+    final actor = users.list().single;
+
+    final source = await sources.create(
+      actorUserId: actor.id,
+      name: 'supermicro-ipmi',
+      type: 'ipmi',
+      baseUrl: 'ipmi://192.168.2.206',
+      token: 'monitor:secret-password',
+    );
+
+    expect(source.type, 'ipmi');
+    expect(await sources.credentialFor(source.id), 'monitor:secret-password');
+  });
+
   test('collection retention keeps only the last seven days', () {
     final now = DateTime.utc(2026, 6, 4, 12);
     final snapshots = <DataSnapshot>[

@@ -198,7 +198,9 @@ class SourceDataRepository {
         proxmoxBackup: await loadProxmoxBackup(source.id),
       );
     }
-    if (source.type == 'redfish' || source.type == 'old_ilo2') {
+    if (source.type == 'redfish' ||
+        source.type == 'old_ilo2' ||
+        source.type == 'ipmi') {
       return SourceRuntimeData(
         redfish: await loadRedfish(source.id, sourceType: source.type),
       );
@@ -211,7 +213,11 @@ class SourceDataRepository {
     bool refresh = false,
     String sourceType = 'redfish',
   }) async {
-    final prefix = sourceType == 'old_ilo2' ? 'old-ilo2' : 'redfish';
+    final prefix = switch (sourceType) {
+      'old_ilo2' => 'old-ilo2',
+      'ipmi' => 'ipmi',
+      _ => 'redfish',
+    };
     final path = '/$prefix/$sourceId/inventory';
     final json = refresh ? await _api.post(path) : await _api.get(path);
     final data = _stringMap(json['data']);

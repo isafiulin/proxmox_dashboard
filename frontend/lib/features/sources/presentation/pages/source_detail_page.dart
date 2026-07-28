@@ -58,7 +58,10 @@ class _SourceDetailContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isHardware = source.type == 'redfish' || source.type == 'old_ilo2';
+    final isHardware =
+        source.type == 'redfish' ||
+        source.type == 'old_ilo2' ||
+        source.type == 'ipmi';
     final controllerUrl = isHardware
         ? _controllerBrowserUri(source.baseUrl)
         : null;
@@ -136,7 +139,9 @@ class _SourceDetailContent extends StatelessWidget {
 
 Uri? _controllerBrowserUri(String baseUrl) {
   final uri = Uri.tryParse(baseUrl.trim());
-  if (uri != null && uri.scheme == 'ssh' && uri.host.isNotEmpty) {
+  if (uri != null &&
+      (uri.scheme == 'ssh' || uri.scheme == 'ipmi') &&
+      uri.host.isNotEmpty) {
     return Uri(scheme: 'https', host: uri.host);
   }
   if (uri == null ||

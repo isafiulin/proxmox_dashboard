@@ -283,30 +283,47 @@ Map<String, Object?> parseOldIlo2Inventory(
 
 Map<String, Map<String, String>> _parseClpResources(String output) {
   final result = <String, Map<String, String>>{};
+  String? rootPath;
   String? path;
   String? lastKey;
-  var inProperties = false;
+  var section = '';
   for (final rawLine in output.split('\n')) {
     final line = rawLine.replaceAll('\r', '');
     final trimmed = line.trim();
     if (trimmed.startsWith('/') && !trimmed.contains(' ')) {
+      rootPath = trimmed;
       path = trimmed;
       result.putIfAbsent(path, () => <String, String>{});
-      inProperties = false;
+      section = '';
       lastKey = null;
       continue;
     }
     if (trimmed == 'Properties') {
-      inProperties = true;
+      section = 'properties';
       lastKey = null;
       continue;
     }
-    if (trimmed == 'Targets' || trimmed == 'Verbs') {
-      inProperties = false;
+    if (trimmed == 'Targets') {
+      section = 'targets';
       lastKey = null;
       continue;
     }
-    if (!inProperties || path == null || trimmed.isEmpty) continue;
+    if (trimmed == 'Verbs') {
+      section = 'verbs';
+      lastKey = null;
+      continue;
+    }
+    if (section != 'properties' && section != 'targets' && rootPath != null) {
+      final nestedPath = _nestedClpPath(rootPath, trimmed);
+      if (nestedPath != null) {
+        path = nestedPath;
+        result.putIfAbsent(path, () => <String, String>{});
+        section = '';
+        lastKey = null;
+        continue;
+      }
+    }
+    if (section != 'properties' || path == null || trimmed.isEmpty) continue;
     final separator = trimmed.indexOf('=');
     if (separator > 0) {
       lastKey = trimmed.substring(0, separator);
@@ -316,6 +333,22 @@ Map<String, Map<String, String>> _parseClpResources(String output) {
     }
   }
   return result;
+}
+
+String? _nestedClpPath(String rootPath, String token) {
+  // ponytail: iLO 2 has no schema endpoint; this is the finite set of useful
+  // direct CLP targets. Add a target here if another firmware exposes one.
+  if (rootPath == '/system1/log1' && RegExp(r'^record\d+$').hasMatch(token)) {
+    return '$rootPath/$token';
+  }
+  if (rootPath != '/system1') return null;
+  if (token == 'drives' ||
+      RegExp(
+        r'^(?:firmware|bootconfig|log|led|oemhp_vsp|cpu|memory|slot|fan|sensor|powersupply)\d+$',
+      ).hasMatch(token)) {
+    return '$rootPath/$token';
+  }
+  return null;
 }
 
 List<Map<String, Object?>> _rows(

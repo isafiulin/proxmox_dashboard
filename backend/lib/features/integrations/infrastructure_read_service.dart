@@ -2,6 +2,7 @@ import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/integrations/proxmox_api_client.dart';
 import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
 import 'package:neotelecom_backend/features/integrations/old_ilo2_client.dart';
+import 'package:neotelecom_backend/features/integrations/ipmi_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 import 'package:neotelecom_backend/features/sources/sources_service.dart';
 
@@ -11,6 +12,7 @@ class InfrastructureReadService {
     this._client,
     this._redfishClient,
     this._oldIlo2Client,
+    this._ipmiClient,
     this._logger,
   );
 
@@ -18,6 +20,7 @@ class InfrastructureReadService {
   final ProxmoxApiClient _client;
   final RedfishApiClient _redfishClient;
   final OldIlo2Client _oldIlo2Client;
+  final IpmiClient _ipmiClient;
   final AppLogger _logger;
   final Map<String, ({DateTime storedAt, Object? data})> _backupSnapshotCache =
       {};
@@ -34,6 +37,14 @@ class InfrastructureReadService {
   Future<Map<String, Object?>> oldIlo2Inventory(String sourceId) async {
     final source = _requireSource(sourceId, 'old_ilo2');
     return _oldIlo2Client.inventory(
+      source,
+      await _sources.credentialFor(source.id),
+    );
+  }
+
+  Future<Map<String, Object?>> ipmiInventory(String sourceId) async {
+    final source = _requireSource(sourceId, 'ipmi');
+    return _ipmiClient.inventory(
       source,
       await _sources.credentialFor(source.id),
     );
