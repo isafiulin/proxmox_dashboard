@@ -15,6 +15,8 @@ class ProxmoxApiClient {
   final bool allowInsecureTls;
   final AppLogger logger;
   final HttpClient _client = HttpClient();
+  final Map<String, ({DateTime storedAt, Object? data})> _cache = {};
+  final Map<String, Future<Object?>> _activeRequests = {};
 
   Future<Object?> getVe(Source source, String credential, String path) {
     return _get(source, credential, path);
@@ -28,16 +30,40 @@ class ProxmoxApiClient {
     Source source,
     String credential,
     String path,
-  ) async {
+  ) {
     if (credential.isEmpty) {
-      throw ProxmoxApiException(
+      return Future<Object?>.error(ProxmoxApiException(
         'source_credentials_missing',
         sourceId: source.id,
         sourceType: source.type,
         path: path,
-      );
+      ));
     }
 
+    final cacheKey =
+        '${source.id}\u0001${source.updatedAt.microsecondsSinceEpoch}\u0001$path';
+    final cached = _cache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.storedAt) <
+            const Duration(seconds: 15)) {
+      return Future<Object?>.value(cached.data);
+    }
+    final activeRequest = _activeRequests[cacheKey];
+    if (activeRequest != null) return activeRequest;
+
+    final request = _request(source, credential, path);
+    _activeRequests[cacheKey] = request;
+    return request.then((data) {
+      _cache[cacheKey] = (storedAt: DateTime.now(), data: data);
+      return data;
+    }).whenComplete(() => _activeRequests.remove(cacheKey));
+  }
+
+  Future<Object?> _request(
+    Source source,
+    String credential,
+    String path,
+  ) async {
     final Uri uri = _uriFor(source.baseUrl, path);
     final stopwatch = Stopwatch()..start();
 
@@ -54,9 +80,16 @@ class ProxmoxApiClient {
       final HttpClientResponse response =
           await request.close().timeout(const Duration(seconds: 30));
       final String body = await utf8.decoder.bind(response).join();
-      final Map<String, Object?> json = body.isEmpty
-          ? <String, Object?>{}
-          : jsonDecode(body) as Map<String, Object?>;
+      Map<String, Object?> json = <String, Object?>{};
+      try {
+        json = body.isEmpty
+            ? <String, Object?>{}
+            : jsonDecode(body) as Map<String, Object?>;
+      } on FormatException {
+        // ponytail: Proxmox can return plain text for auth failures; successful
+        // responses must remain JSON because all callers consume `data`.
+        if (response.statusCode >= 200 && response.statusCode < 300) rethrow;
+      }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         logger.info('integration.proxmox_request', <String, Object?>{

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:neotelecom_backend/app.dart';
@@ -30,7 +31,9 @@ Future<void> main() async {
   });
 
   await for (final request in server) {
-    await app.handle(request);
+    // ponytail: requests are independent; App.handle owns error responses.
+    // Keep this concurrent unless mutable request-scoped state is introduced.
+    unawaited(app.handle(request));
   }
 }
 

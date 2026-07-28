@@ -13,7 +13,7 @@ class ApiClient {
             BaseOptions(
               baseUrl: _effectiveBaseUrl,
               connectTimeout: const Duration(seconds: 10),
-              receiveTimeout: const Duration(seconds: 20),
+              receiveTimeout: const Duration(seconds: 60),
               contentType: Headers.jsonContentType,
             ),
           );

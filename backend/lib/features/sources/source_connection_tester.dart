@@ -62,9 +62,16 @@ class SourceConnectionTester {
       final response =
           await request.close().timeout(const Duration(seconds: 20));
       final body = await utf8.decoder.bind(response).join();
-      final json = body.isEmpty
-          ? <String, Object?>{}
-          : jsonDecode(body) as Map<String, Object?>;
+      Map<String, Object?> json = <String, Object?>{};
+      try {
+        json = body.isEmpty
+            ? <String, Object?>{}
+            : jsonDecode(body) as Map<String, Object?>;
+      } on FormatException {
+        // ponytail: Proxmox auth errors may be plain text, while successful
+        // responses are required to use the documented JSON envelope.
+        if (response.statusCode >= 200 && response.statusCode < 300) rethrow;
+      }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = json['data'];

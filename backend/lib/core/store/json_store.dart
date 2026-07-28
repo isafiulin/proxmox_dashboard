@@ -11,6 +11,7 @@ class JsonStore implements AppStore {
   JsonStore(this.file);
 
   final File file;
+  Future<void> _saveQueue = Future<void>.value();
   @override
   final users = <User>[];
   @override
@@ -53,7 +54,13 @@ class JsonStore implements AppStore {
   }
 
   @override
-  Future<void> save() async {
+  Future<void> save() {
+    final next = _saveQueue.then((_) => _save());
+    _saveQueue = next.onError((_, __) {});
+    return next;
+  }
+
+  Future<void> _save() async {
     await file.parent.create(recursive: true);
     const encoder = JsonEncoder.withIndent('  ');
     await file.writeAsString(encoder.convert({

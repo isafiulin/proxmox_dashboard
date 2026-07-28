@@ -49,12 +49,25 @@ class CollectionService {
   }
 
   Future<void> collectAll({required String actorUserId}) async {
-    for (final Source source in List<Source>.from(_store.sources)) {
-      await collectSource(actorUserId: actorUserId, source: source);
-    }
+    await Future.wait(
+      List<Source>.from(_store.sources).map(
+        (source) => _collectSource(actorUserId: actorUserId, source: source),
+      ),
+    );
+    await _store.save();
   }
 
   Future<DataSnapshot> collectSource({
+    required String actorUserId,
+    required Source source,
+  }) async {
+    final snapshot =
+        await _collectSource(actorUserId: actorUserId, source: source);
+    await _store.save();
+    return snapshot;
+  }
+
+  Future<DataSnapshot> _collectSource({
     required String actorUserId,
     required Source source,
   }) async {
@@ -106,22 +119,30 @@ class CollectionService {
       targetId: source.id,
       details: <String, Object?>{'status': snapshot.status},
     );
-    await _store.save();
     return snapshot;
   }
 
   Future<Map<String, Object?>> _payloadFor(Source source) async {
     if (source.type == 'proxmox_ve') {
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        _infrastructure.proxmoxVeNodes(source.id),
+        _infrastructure.proxmoxVeResources(source.id),
+        _infrastructure.proxmoxVeTasks(source.id),
+      ]);
       return <String, Object?>{
-        'nodes': await _infrastructure.proxmoxVeNodes(source.id),
-        'resources': await _infrastructure.proxmoxVeResources(source.id),
-        'tasks': await _infrastructure.proxmoxVeTasks(source.id),
+        'nodes': results[0],
+        'resources': results[1],
+        'tasks': results[2],
       };
     }
     if (source.type == 'proxmox_backup') {
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        _infrastructure.proxmoxBackupDatastores(source.id),
+        _infrastructure.proxmoxBackupTasks(source.id),
+      ]);
       return <String, Object?>{
-        'datastores': await _infrastructure.proxmoxBackupDatastores(source.id),
-        'tasks': await _infrastructure.proxmoxBackupTasks(source.id),
+        'datastores': results[0],
+        'tasks': results[1],
       };
     }
     return <String, Object?>{'status': 'not_implemented'};

@@ -11,6 +11,8 @@ class PostgresStore implements AppStore {
   PostgresStore(this._connection);
 
   final Connection _connection;
+  Future<void> _saveQueue = Future<void>.value();
+  String _savedSnapshotIds = '';
 
   @override
   final users = <User>[];
@@ -40,13 +42,24 @@ class PostgresStore implements AppStore {
     await _loadAuditEvents();
     await _loadDataSnapshots();
     await _loadSettings();
+    _savedSnapshotIds = _snapshotIds();
   }
 
   @override
-  Future<void> save() async {
+  Future<void> save() {
+    final next = _saveQueue.then((_) => _save());
+    _saveQueue = next.onError((_, __) {});
+    return next;
+  }
+
+  Future<void> _save() async {
+    final snapshotIds = _snapshotIds();
+    final snapshotsChanged = snapshotIds != _savedSnapshotIds;
     await _connection.runTx((Session session) async {
       await session.execute('DELETE FROM audit_events');
-      await session.execute('DELETE FROM data_snapshots');
+      if (snapshotsChanged) {
+        await session.execute('DELETE FROM data_snapshots');
+      }
       await session.execute('DELETE FROM system_settings');
       await session.execute('DELETE FROM sources');
       await session.execute('DELETE FROM users');
@@ -128,24 +141,26 @@ class PostgresStore implements AppStore {
         );
       }
 
-      for (final DataSnapshot snapshot in dataSnapshots) {
-        await session.execute(
-          Sql.named('''
+      if (snapshotsChanged) {
+        for (final DataSnapshot snapshot in dataSnapshots) {
+          await session.execute(
+            Sql.named('''
             INSERT INTO data_snapshots (
               id, source_id, source_type, status, payload, collected_at
             ) VALUES (
               @id, @sourceId, @sourceType, @status, @payload::jsonb, @collectedAt
             )
           '''),
-          parameters: <String, Object?>{
-            'id': snapshot.id,
-            'sourceId': snapshot.sourceId,
-            'sourceType': snapshot.sourceType,
-            'status': snapshot.status,
-            'payload': jsonEncode(snapshot.payload),
-            'collectedAt': snapshot.collectedAt,
-          },
-        );
+            parameters: <String, Object?>{
+              'id': snapshot.id,
+              'sourceId': snapshot.sourceId,
+              'sourceType': snapshot.sourceType,
+              'status': snapshot.status,
+              'payload': jsonEncode(snapshot.payload),
+              'collectedAt': snapshot.collectedAt,
+            },
+          );
+        }
       }
 
       await session.execute(
@@ -156,6 +171,13 @@ class PostgresStore implements AppStore {
         parameters: <String, Object?>{'data': jsonEncode(settings.toJson())},
       );
     });
+    _savedSnapshotIds = snapshotIds;
+  }
+
+  String _snapshotIds() {
+    // ponytail: snapshots are immutable today, so IDs are a sufficient dirty
+    // check. Replace this with a revision counter if snapshot mutation appears.
+    return dataSnapshots.map((snapshot) => snapshot.id).join('\n');
   }
 
   @override

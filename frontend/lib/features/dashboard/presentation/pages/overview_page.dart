@@ -112,6 +112,8 @@ class _SuperCriticalAlarms extends StatefulWidget {
 
 class _SuperCriticalAlarmsState extends State<_SuperCriticalAlarms> {
   _AlarmCategory _category = _AlarmCategory.all;
+  List<Source>? _loadedSources;
+  Future<HealthRuntimeData>? _healthFuture;
 
   @override
   Widget build(BuildContext context) {
@@ -120,8 +122,12 @@ class _SuperCriticalAlarmsState extends State<_SuperCriticalAlarms> {
         if (state.items.isEmpty) {
           return const SizedBox.shrink();
         }
+        if (!identical(_loadedSources, state.items)) {
+          _loadedSources = state.items;
+          _healthFuture = loadHealthRuntimeData(context, state.items);
+        }
         return FutureBuilder<HealthRuntimeData>(
-          future: loadHealthRuntimeData(context, state.items),
+          future: _healthFuture,
           builder:
               (
                 BuildContext context,
