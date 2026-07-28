@@ -18,6 +18,11 @@ import 'package:frontend/shared/widgets/app_text_field.dart';
 import 'package:frontend/shared/widgets/scrollable_page_frame.dart';
 import 'package:go_router/go_router.dart';
 
+const String _builtFrontendVersion = String.fromEnvironment(
+  'APP_VERSION',
+  defaultValue: 'development',
+);
+
 class DashboardShell extends StatelessWidget {
   const DashboardShell({
     required this.location,
@@ -557,7 +562,7 @@ class _AppVersionInfo {
 
   factory _AppVersionInfo.fromJson(Map<String, Object?> json) {
     return _AppVersionInfo(
-      frontendVersion: json['frontendVersion']?.toString() ?? 'unknown',
+      frontendVersion: _builtFrontendVersion,
       backendVersion:
           json['backendVersion']?.toString() ??
           json['version']?.toString() ??
@@ -693,11 +698,6 @@ const List<_NavSection> _navSections = <_NavSection>[
     icon: Icons.hub_outlined,
     items: <_NavItem>[
       _NavItem(
-        path: '/notification-settings',
-        label: 'Уведомления',
-        icon: Icons.notifications_outlined,
-      ),
-      _NavItem(
         path: '/node-health',
         label: 'Node health',
         icon: Icons.hub_outlined,
@@ -754,6 +754,11 @@ const List<_NavSection> _navSections = <_NavSection>[
     label: 'Управление',
     icon: Icons.settings_outlined,
     items: <_NavItem>[
+      _NavItem(
+        path: '/notification-settings',
+        label: 'Уведомления',
+        icon: Icons.notifications_outlined,
+      ),
       _NavItem(
         path: '/collection-metrics',
         label: 'Collection metrics',

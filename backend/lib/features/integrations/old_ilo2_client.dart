@@ -13,13 +13,69 @@ class OldIlo2Client {
     Source source,
     String credential,
   ) async {
-    final systemOutput = await _run(source, credential, 'show /system1 -all');
-    final logOutput = await _run(source, credential, 'show /system1/log1 -all');
+    final systemOutput = await _runResource(
+      source,
+      credential,
+      '/system1',
+      const <String>[
+        'show /system1 -l 1',
+        'show /system1 -all',
+        'show /system1',
+      ],
+      requireProperties: true,
+    );
+    var logOutput = '';
+    try {
+      logOutput = await _runResource(
+        source,
+        credential,
+        '/system1/log1',
+        const <String>[
+          'show /system1/log1 -l 1',
+          'show /system1/log1 -all',
+          'show /system1/log1',
+        ],
+        requireProperties: false,
+      );
+    } on Object catch (error) {
+      // An oversized or damaged IML must not hide live hardware inventory.
+      logger.warning('integration.old_ilo2_log_skipped', <String, Object?>{
+        'sourceId': source.id,
+        'error': error.toString(),
+      });
+    }
     return parseOldIlo2Inventory(systemOutput, logOutput);
   }
 
   Future<String> systemSummary(Source source, String credential) =>
       _run(source, credential, 'show /system1');
+
+  Future<String> _runResource(Source source, String credential,
+      String requiredPath, List<String> commands,
+      {required bool requireProperties}) async {
+    Object? lastError;
+    for (final command in commands) {
+      try {
+        final output = await _run(source, credential, command);
+        final resource = _parseClpResources(output)[requiredPath];
+        if (resource != null && (!requireProperties || resource.isNotEmpty)) {
+          return output;
+        }
+        lastError = 'empty_resource_response';
+        logger.warning('integration.old_ilo2_empty_response', <String, Object?>{
+          'sourceId': source.id,
+          'command': command,
+          'requiredPath': requiredPath,
+          'outputLength': output.length,
+        });
+      } on Object catch (error) {
+        lastError = error;
+      }
+    }
+    throw OldIlo2Exception(
+      'old_ilo2_resource_unavailable: $requiredPath: $lastError',
+    );
+  }
 
   Future<String> _run(
     Source source,
@@ -290,7 +346,9 @@ Map<String, Map<String, String>> _parseClpResources(String output) {
   String? lastKey;
   var section = '';
   for (final rawLine in output.split('\n')) {
-    final line = rawLine.replaceAll('\r', '');
+    final line = rawLine
+        .replaceAll('\r', '')
+        .replaceAll(RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '');
     final trimmed = line.trim();
     if (trimmed.startsWith('/') && !trimmed.contains(' ')) {
       rootPath = trimmed;

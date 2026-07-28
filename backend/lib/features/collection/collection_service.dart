@@ -106,7 +106,9 @@ class CollectionService {
     }
     var snapshot = latestSuccessfulSnapshot(
       _store.dataSnapshots.where(
-        (item) => !item.collectedAt.isBefore(source.updatedAt),
+        (item) =>
+            !item.collectedAt.isBefore(source.updatedAt) &&
+            (source.type != 'old_ilo2' || _hasOldIlo2Identity(item.payload)),
       ),
       sourceId,
       source.type,
@@ -378,6 +380,12 @@ class CollectionService {
       ),
     };
   }
+}
+
+bool _hasOldIlo2Identity(Map<String, Object?> payload) {
+  final identity = payload['identity'];
+  if (identity is! Map) return false;
+  return (identity['model']?.toString().trim() ?? '').isNotEmpty;
 }
 
 class CollectionException implements Exception {
