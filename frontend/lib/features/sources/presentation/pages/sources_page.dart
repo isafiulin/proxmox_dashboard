@@ -77,6 +77,11 @@ class SourcesPage extends StatelessWidget {
                             icon: const Icon(Icons.edit_outlined),
                           ),
                           IconButton(
+                            tooltip: 'Копировать',
+                            onPressed: () => _copySource(context, source),
+                            icon: const Icon(Icons.copy_outlined),
+                          ),
+                          IconButton(
                             tooltip: 'Удалить',
                             onPressed: () =>
                                 context.read<SourcesCubit>().remove(source.id),
@@ -120,6 +125,19 @@ class SourcesPage extends StatelessWidget {
     }
   }
 
+  Future<void> _copySource(BuildContext context, Source source) async {
+    final bool? created = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => BlocProvider<SourcesCubit>.value(
+        value: context.read<SourcesCubit>(),
+        child: SourceDialog(source: source, copying: true),
+      ),
+    );
+    if (created == true && context.mounted) {
+      await context.read<SourcesCubit>().load();
+    }
+  }
+
   Future<void> _testSource(BuildContext context, String sourceId) async {
     final SourceTestResult result = await context.read<SourcesCubit>().test(
       sourceId,
@@ -133,9 +151,10 @@ class SourcesPage extends StatelessWidget {
 }
 
 class SourceDialog extends StatefulWidget {
-  const SourceDialog({this.source, super.key});
+  const SourceDialog({this.source, this.copying = false, super.key});
 
   final Source? source;
+  final bool copying;
 
   @override
   State<SourceDialog> createState() => _SourceDialogState();
@@ -151,7 +170,7 @@ class _SourceDialogState extends State<SourceDialog> {
   bool tokenVisible = false;
   String? error;
 
-  bool get editing => widget.source != null;
+  bool get editing => widget.source != null && !widget.copying;
 
   @override
   void initState() {
@@ -217,7 +236,13 @@ class _SourceDialogState extends State<SourceDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(editing ? 'Редактировать источник' : 'Добавить источник'),
+      title: Text(
+        editing
+            ? 'Редактировать источник'
+            : widget.copying
+            ? 'Копировать источник'
+            : 'Добавить источник',
+      ),
       content: SizedBox(
         width: 520,
         child: Column(

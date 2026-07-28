@@ -18,6 +18,7 @@ import 'package:frontend/shared/widgets/page_header.dart';
 import 'package:frontend/shared/widgets/status_chip.dart';
 import 'package:frontend/shared/widgets/usage_bar.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SourceDetailPage extends StatelessWidget {
   const SourceDetailPage({required this.sourceId, super.key});
@@ -57,6 +58,9 @@ class _SourceDetailContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final controllerUrl = source.type == 'redfish'
+        ? _controllerBrowserUri(source.baseUrl)
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -71,6 +75,19 @@ class _SourceDetailContent extends StatelessWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              if (source.type == 'redfish') ...<Widget>[
+                OutlinedButton.icon(
+                  onPressed: controllerUrl == null
+                      ? null
+                      : () => launchUrl(
+                          controllerUrl,
+                          mode: LaunchMode.externalApplication,
+                        ),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Открыть iLO/iBMC'),
+                ),
+                const SizedBox(width: 12),
+              ],
               Icon(_iconForSource(source.type), color: AppColors.primary),
               const SizedBox(width: 12),
               StatusChip(status: source.status),
@@ -116,6 +133,16 @@ class _SourceDetailContent extends StatelessWidget {
       ],
     );
   }
+}
+
+Uri? _controllerBrowserUri(String baseUrl) {
+  final uri = Uri.tryParse(baseUrl.trim());
+  if (uri == null ||
+      !uri.hasAuthority ||
+      (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return null;
+  }
+  return uri;
 }
 
 class _RedfishSections extends StatelessWidget {
@@ -876,8 +903,7 @@ Color _temperatureColor(
   if (health == 'CRITICAL' || (critical != null && reading >= critical)) {
     return AppColors.danger;
   }
-  if (health == 'WARNING' ||
-      (critical != null && reading >= critical * 0.85)) {
+  if (health == 'WARNING' || (critical != null && reading >= critical * 0.85)) {
     return AppColors.warning;
   }
   return AppColors.success;
