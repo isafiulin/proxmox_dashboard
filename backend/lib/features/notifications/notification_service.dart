@@ -53,6 +53,8 @@ class NotificationService {
       previous,
       snapshot,
       minimumSeverity: settings.telegramMinimumSeverity,
+      backupSnapshots: _latestBackupSnapshots(_store),
+      backupNamespace: source.backupNamespace,
     );
     if (change.started.isEmpty &&
         (!settings.telegramNotifyRecovery || change.resolved.isEmpty)) {
@@ -137,13 +139,28 @@ IncidentChange incidentChange(
   DataSnapshot? previous,
   DataSnapshot current, {
   required String minimumSeverity,
+  List<Map<String, Object?>> backupSnapshots = const <Map<String, Object?>>[],
+  String backupNamespace = '',
+  DateTime? now,
 }) {
   final before = <String, Incident>{
-    for (final incident in _incidents(previous, minimumSeverity))
+    for (final incident in _incidents(
+      previous,
+      minimumSeverity,
+      backupSnapshots: backupSnapshots,
+      backupNamespace: backupNamespace,
+      now: now,
+    ))
       incident.key: incident,
   };
   final after = <String, Incident>{
-    for (final incident in _incidents(current, minimumSeverity))
+    for (final incident in _incidents(
+      current,
+      minimumSeverity,
+      backupSnapshots: backupSnapshots,
+      backupNamespace: backupNamespace,
+      now: now,
+    ))
       incident.key: incident,
   };
   final started = after.values
@@ -272,7 +289,13 @@ String _buildTelegramBatchMessage(
   return lines.join('\n');
 }
 
-List<Incident> _incidents(DataSnapshot? snapshot, String minimumSeverity) {
+List<Incident> _incidents(
+  DataSnapshot? snapshot,
+  String minimumSeverity, {
+  required List<Map<String, Object?>> backupSnapshots,
+  required String backupNamespace,
+  required DateTime? now,
+}) {
   if (snapshot == null) return const <Incident>[];
   if (snapshot.status != 'ok') {
     return const <Incident>[
@@ -283,25 +306,243 @@ List<Incident> _incidents(DataSnapshot? snapshot, String minimumSeverity) {
       ),
     ];
   }
+  final incidents = <Incident>[];
   final rows = snapshot.payload['healthIssues'];
-  if (rows is! List) return const <Incident>[];
+  if (rows is List) {
+    incidents.addAll(rows.whereType<Map>().map((row) {
+      final severity = _normalizedSeverity(row['health']?.toString());
+      final type = row['resourceType']?.toString() ?? 'resource';
+      final id = row['resourceId']?.toString() ?? row['name']?.toString() ?? '';
+      final name = row['name']?.toString();
+      return Incident(
+        key: '$type:$id',
+        label: name == null || name.isEmpty ? '$type $id' : name,
+        severity: severity,
+      );
+    }));
+  }
+  if (snapshot.sourceType == 'proxmox_ve') {
+    incidents.addAll(_proxmoxVeIncidents(
+      snapshot,
+      backupSnapshots: backupSnapshots,
+      backupNamespace: backupNamespace,
+      now: now,
+    ));
+  } else if (snapshot.sourceType == 'proxmox_backup') {
+    incidents.addAll(_proxmoxBackupIncidents(snapshot, now: now));
+  }
   final minimum = _severityRank(minimumSeverity);
-  return rows
-      .whereType<Map>()
-      .map((row) {
-        final severity = _normalizedSeverity(row['health']?.toString());
-        final type = row['resourceType']?.toString() ?? 'resource';
-        final id =
-            row['resourceId']?.toString() ?? row['name']?.toString() ?? '';
-        final name = row['name']?.toString();
-        return Incident(
-          key: '$type:$id',
-          label: name == null || name.isEmpty ? '$type $id' : name,
-          severity: severity,
-        );
-      })
+  return incidents
       .where((incident) => _severityRank(incident.severity) >= minimum)
       .toList();
+}
+
+List<Incident> _proxmoxVeIncidents(
+  DataSnapshot snapshot, {
+  required List<Map<String, Object?>> backupSnapshots,
+  required String backupNamespace,
+  required DateTime? now,
+}) {
+  final incidents = <Incident>[];
+  final resources = _maps(snapshot.payload['resources']);
+  for (final resource in resources) {
+    final type = resource['type']?.toString() ?? '';
+    final id = resource['id']?.toString() ?? resource['vmid']?.toString() ?? '';
+    final name = resource['name']?.toString() ?? id;
+    final status = resource['status']?.toString().toLowerCase() ?? '';
+    if (type == 'node' && status.isNotEmpty && status != 'online') {
+      incidents.add(Incident(
+        key: 'node:$id:offline',
+        label: 'Нода $name недоступна',
+        severity: 'critical',
+      ));
+    }
+    if (type == 'node' ||
+        ((type == 'qemu' || type == 'lxc') && status == 'running')) {
+      _addRatioIncident(incidents, '$type:$id:cpu', '$name: CPU ≥ 90%',
+          _ratio(resource['cpu']));
+      _addRatioIncident(
+        incidents,
+        '$type:$id:ram',
+        '$name: RAM ≥ 90%',
+        _ratioPair(resource['mem'], resource['maxmem']),
+      );
+    }
+    if (type == 'storage') {
+      _addRatioIncident(
+        incidents,
+        'storage:$id:disk',
+        'Storage $name заполнен ≥ 90%',
+        _ratioPair(resource['disk'], resource['maxdisk']),
+      );
+    }
+    if ((type == 'qemu' || type == 'lxc') && status == 'running') {
+      final backup = _backupIncident(
+        resource,
+        backupSnapshots,
+        backupNamespace: backupNamespace,
+        storageConfig: _maps(snapshot.payload['storageConfig']),
+        now: now,
+      );
+      if (backup != null) incidents.add(backup);
+    }
+  }
+  incidents.addAll(_failedTaskIncidents(_maps(snapshot.payload['tasks']), now));
+  return incidents;
+}
+
+List<Incident> _proxmoxBackupIncidents(DataSnapshot snapshot, {DateTime? now}) {
+  final incidents = _failedTaskIncidents(_maps(snapshot.payload['tasks']), now);
+  final health = snapshot.payload['health'];
+  if (health is Map) {
+    for (final datastore in _maps(health['datastores'])) {
+      final name = (datastore['store'] ?? datastore['name'])?.toString() ?? '';
+      _addRatioIncident(
+        incidents,
+        'datastore:$name:disk',
+        'PBS datastore $name заполнен ≥ 90%',
+        _ratioPair(datastore['used'], datastore['total']),
+      );
+    }
+    for (final error in _maps(health['errors'])) {
+      final area = error['area']?.toString() ?? 'PBS';
+      incidents.add(Incident(
+        key: 'pbs-health:$area:${error['status'] ?? error['error'] ?? ''}',
+        label: '$area: ${error['error'] ?? error['status'] ?? 'ошибка'}',
+        severity: 'critical',
+      ));
+    }
+  }
+  return incidents;
+}
+
+List<Incident> _failedTaskIncidents(
+  List<Map<String, Object?>> tasks,
+  DateTime? now,
+) {
+  final current = (now ?? DateTime.now()).toUtc();
+  return tasks.where((task) {
+    if (task['endtime'] == null) return false;
+    final status = task['status']?.toString().trim().toLowerCase() ?? '';
+    if (status.isEmpty || status == 'ok' || status == 'unknown') return false;
+    final ended = int.tryParse(task['endtime']?.toString() ?? '');
+    return ended == null ||
+        current.difference(DateTime.fromMillisecondsSinceEpoch(
+              ended * 1000,
+              isUtc: true,
+            )) <=
+            const Duration(hours: 24);
+  }).map((task) {
+    final type = (task['worker_type'] ?? task['type'])?.toString() ?? 'task';
+    final target = (task['worker_id'] ?? task['id'])?.toString() ?? '';
+    final key = task['upid']?.toString() ?? '$type:$target:${task['endtime']}';
+    return Incident(
+      key: 'task:$key',
+      label: '$type $target: ${task['status']}',
+      severity: 'critical',
+    );
+  }).toList();
+}
+
+Incident? _backupIncident(
+  Map<String, Object?> guest,
+  List<Map<String, Object?>> snapshots, {
+  required String backupNamespace,
+  required List<Map<String, Object?>> storageConfig,
+  required DateTime? now,
+}) {
+  final type = guest['type']?.toString() ?? '';
+  final vmid = guest['vmid']?.toString() ?? '';
+  final name = guest['name']?.toString() ?? '$type/$vmid';
+  final backupType = type == 'lxc' ? 'ct' : 'vm';
+  final namespaces = <String>{};
+  if (backupNamespace.trim().isNotEmpty) namespaces.add(backupNamespace.trim());
+  for (final storage in storageConfig) {
+    final storageType =
+        (storage['type'] ?? storage['plugintype'])?.toString().toLowerCase() ??
+            '';
+    if (storageType != 'pbs' && storageType != 'proxmox-backup') continue;
+    final namespace =
+        (storage['namespace'] ?? storage['ns'] ?? storage['backup-ns'])
+                ?.toString()
+                .trim() ??
+            '';
+    if (namespace.isNotEmpty && namespace != '/') namespaces.add(namespace);
+  }
+  if (namespaces.isEmpty) namespaces.add('');
+  final matches = snapshots.where((row) {
+    final namespace = (row['namespace'] ?? row['ns'] ?? row['backup-ns'])
+            ?.toString()
+            .trim() ??
+        '';
+    return row['backup-type']?.toString() == backupType &&
+        row['backup-id']?.toString() == vmid &&
+        namespaces.contains(namespace);
+  }).toList();
+  final key = 'backup:$type:$vmid';
+  if (matches.isEmpty) {
+    return Incident(
+      key: key,
+      label: '$name ($type/$vmid): backup не найден',
+      severity: 'critical',
+    );
+  }
+  final latestSeconds = matches
+      .map((row) => int.tryParse(row['backup-time']?.toString() ?? '') ?? 0)
+      .reduce((left, right) => left > right ? left : right);
+  final age = (now ?? DateTime.now()).toUtc().difference(
+        DateTime.fromMillisecondsSinceEpoch(latestSeconds * 1000, isUtc: true),
+      );
+  if (age > const Duration(days: 7)) {
+    return Incident(
+        key: key, label: '$name: backup старше 7 дней', severity: 'critical');
+  }
+  if (age > const Duration(hours: 24)) {
+    return Incident(
+        key: key, label: '$name: backup старше 24 часов', severity: 'warning');
+  }
+  return null;
+}
+
+void _addRatioIncident(
+  List<Incident> incidents,
+  String key,
+  String label,
+  double value,
+) {
+  if (value >= 0.9) {
+    incidents.add(Incident(key: key, label: label, severity: 'critical'));
+  }
+}
+
+double _ratio(Object? value) => double.tryParse(value?.toString() ?? '') ?? 0;
+
+double _ratioPair(Object? used, Object? total) {
+  final totalValue = double.tryParse(total?.toString() ?? '') ?? 0;
+  final usedValue = double.tryParse(used?.toString() ?? '') ?? 0;
+  return totalValue <= 0 ? 0 : usedValue / totalValue;
+}
+
+List<Map<String, Object?>> _maps(Object? value) => value is List
+    ? value.whereType<Map>().map((row) => row.cast<String, Object?>()).toList()
+    : const <Map<String, Object?>>[];
+
+List<Map<String, Object?>> _latestBackupSnapshots(AppStore store) {
+  final result = <Map<String, Object?>>[];
+  for (final source
+      in store.sources.where((item) => item.type == 'proxmox_backup')) {
+    final snapshots = store.dataSnapshots
+        .where((item) =>
+            item.sourceId == source.id &&
+            item.sourceType == source.type &&
+            item.status == 'ok' &&
+            !item.collectedAt.isBefore(source.updatedAt))
+        .toList()
+      ..sort((left, right) => right.collectedAt.compareTo(left.collectedAt));
+    if (snapshots.isNotEmpty)
+      result.addAll(_maps(snapshots.first.payload['snapshots']));
+  }
+  return result;
 }
 
 String _normalizedSeverity(String? value) {

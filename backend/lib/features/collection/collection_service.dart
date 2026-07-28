@@ -54,13 +54,24 @@ class CollectionService {
   }
 
   Future<void> collectAll({required String actorUserId}) async {
+    final sources = List<Source>.from(_store.sources);
+    // PBS snapshots are collected first so PVE backup alarms use the same
+    // polling cycle instead of reporting transient "missing backup" events.
     await Future.wait(
-      List<Source>.from(_store.sources).map(
-        (source) => _collectSourceOnce(
-          actorUserId: actorUserId,
-          source: source,
-        ),
-      ),
+      sources.where((source) => source.type == 'proxmox_backup').map(
+            (source) => _collectSourceOnce(
+              actorUserId: actorUserId,
+              source: source,
+            ),
+          ),
+    );
+    await Future.wait(
+      sources.where((source) => source.type != 'proxmox_backup').map(
+            (source) => _collectSourceOnce(
+              actorUserId: actorUserId,
+              source: source,
+            ),
+          ),
     );
     await _store.save();
   }
@@ -257,22 +268,17 @@ class CollectionService {
         _infrastructure.proxmoxVeNodes(source.id),
         _infrastructure.proxmoxVeResources(source.id),
         _infrastructure.proxmoxVeTasks(source.id),
+        _infrastructure.proxmoxVeStorageConfig(source.id),
       ]);
       return <String, Object?>{
         'nodes': results[0],
         'resources': results[1],
         'tasks': results[2],
+        'storageConfig': results[3],
       };
     }
     if (source.type == 'proxmox_backup') {
-      final results = await Future.wait<Object?>(<Future<Object?>>[
-        _infrastructure.proxmoxBackupDatastores(source.id),
-        _infrastructure.proxmoxBackupTasks(source.id),
-      ]);
-      return <String, Object?>{
-        'datastores': results[0],
-        'tasks': results[1],
-      };
+      return _proxmoxBackupPayload(source);
     }
     if (source.type == 'redfish') {
       return _infrastructure.redfishInventory(source.id);
@@ -284,6 +290,60 @@ class CollectionService {
       return _infrastructure.ipmiInventory(source.id);
     }
     throw StateError('unsupported_source_type: ${source.type}');
+  }
+
+  Future<Map<String, Object?>> _proxmoxBackupPayload(Source source) async {
+    final results = await Future.wait<Object?>(<Future<Object?>>[
+      _infrastructure.proxmoxBackupDatastores(source.id),
+      _infrastructure.proxmoxBackupTasks(source.id),
+      _infrastructure.proxmoxBackupHealth(source.id),
+    ]);
+    final datastores = _mapRows(results[0]);
+    final snapshots = <Map<String, Object?>>[];
+    await Future.wait(datastores.map((datastore) async {
+      final store = datastore['store']?.toString() ?? '';
+      if (store.isEmpty) return;
+      final namespaces = <String>{''};
+      try {
+        for (final row in _mapRows(
+          await _infrastructure.proxmoxBackupNamespaces(source.id, store),
+        )) {
+          final namespace = (row['ns'] ?? row['namespace'] ?? row['path'])
+                  ?.toString()
+                  .trim() ??
+              '';
+          if (namespace.isNotEmpty) namespaces.add(namespace);
+        }
+      } on Object catch (error) {
+        _logger.warning('collection.pbs_namespaces_skipped', <String, Object?>{
+          'sourceId': source.id,
+          'datastore': store,
+          'error': error.toString(),
+        });
+      }
+      final batches = await Future.wait(namespaces.map((namespace) async {
+        return _mapRows(
+          await _infrastructure.proxmoxBackupSnapshots(
+            source.id,
+            store,
+            namespace: namespace,
+          ),
+        ).map((row) => <String, Object?>{
+              'datastore': store,
+              'namespace': namespace,
+              ...row,
+            });
+      }));
+      snapshots.addAll(batches.expand((batch) => batch));
+    }));
+    return <String, Object?>{
+      'datastores': datastores,
+      'tasks': results[1],
+      'health': results[2] is Map
+          ? (results[2] as Map).cast<String, Object?>()
+          : <String, Object?>{},
+      'snapshots': snapshots,
+    };
   }
 
   Future<void> prune({DateTime? now}) async {
@@ -387,6 +447,10 @@ bool _hasOldIlo2Identity(Map<String, Object?> payload) {
   if (identity is! Map) return false;
   return (identity['model']?.toString().trim() ?? '').isNotEmpty;
 }
+
+List<Map<String, Object?>> _mapRows(Object? value) => value is List
+    ? value.whereType<Map>().map((row) => row.cast<String, Object?>()).toList()
+    : const <Map<String, Object?>>[];
 
 class CollectionException implements Exception {
   const CollectionException(this.code);
