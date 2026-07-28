@@ -365,28 +365,130 @@ class _SidebarNavigation extends StatelessWidget {
                 ],
               ),
             ),
-            for (final _NavItem item in _navItems)
-              _SidebarItem(
-                item: item,
-                selected: _selectedPath(location) == item.path,
-                collapsed: collapsed,
-                onTap: () => onNavigate(item.path),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: <Widget>[
+                  for (final section in _navSections)
+                    collapsed
+                        ? _CollapsedSidebarSection(
+                            section: section,
+                            selectedPath: _selectedPath(location),
+                            onNavigate: onNavigate,
+                          )
+                        : _ExpandedSidebarSection(
+                            section: section,
+                            selectedPath: _selectedPath(location),
+                            onNavigate: onNavigate,
+                          ),
+                ],
               ),
-            const Spacer(),
-            _SidebarItem(
-              item: const _NavItem(
-                path: '',
-                label: 'iLO/Redfish',
-                icon: Icons.developer_board_outlined,
-                disabled: true,
-              ),
-              selected: false,
-              collapsed: collapsed,
-              onTap: () {},
             ),
             _VersionLabel(collapsed: collapsed, info: versionInfo),
             const SizedBox(height: AppSpacing.sm),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandedSidebarSection extends StatelessWidget {
+  const _ExpandedSidebarSection({
+    required this.section,
+    required this.selectedPath,
+    required this.onNavigate,
+  });
+
+  final _NavSection section;
+  final String selectedPath;
+  final ValueChanged<String> onNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = section.items.any((item) => item.path == selectedPath);
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        key: ValueKey('${section.label}:$selected'),
+        initiallyExpanded: selected,
+        maintainState: true,
+        tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        childrenPadding: const EdgeInsets.only(bottom: AppSpacing.xs),
+        leading: Icon(
+          section.icon,
+          size: 20,
+          color: selected ? Colors.white : AppColors.sidebarMuted,
+        ),
+        title: Text(
+          section.label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: selected ? Colors.white : AppColors.sidebarMuted,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+          ),
+        ),
+        iconColor: Colors.white,
+        collapsedIconColor: AppColors.sidebarMuted,
+        children: section.items
+            .map(
+              (item) => _SidebarItem(
+                item: item,
+                selected: selectedPath == item.path,
+                collapsed: false,
+                onTap: () => onNavigate(item.path),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _CollapsedSidebarSection extends StatelessWidget {
+  const _CollapsedSidebarSection({
+    required this.section,
+    required this.selectedPath,
+    required this.onNavigate,
+  });
+
+  final _NavSection section;
+  final String selectedPath;
+  final ValueChanged<String> onNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = section.items.any((item) => item.path == selectedPath);
+    final color = selected ? Colors.white : AppColors.sidebarMuted;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: section.label,
+        offset: const Offset(64, 0),
+        onSelected: onNavigate,
+        itemBuilder: (context) => section.items
+            .map(
+              (item) => PopupMenuItem<String>(
+                value: item.path,
+                child: Row(
+                  children: <Widget>[
+                    Icon(item.icon, size: 20),
+                    const SizedBox(width: AppSpacing.md),
+                    Text(item.label),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+        child: Container(
+          height: 44,
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(child: Icon(section.icon, color: color, size: 21)),
         ),
       ),
     );
@@ -476,11 +578,7 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = item.disabled
-        ? AppColors.sidebarMuted.withValues(alpha: 0.45)
-        : selected
-        ? Colors.white
-        : AppColors.sidebarMuted;
+    final color = selected ? Colors.white : AppColors.sidebarMuted;
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
@@ -490,7 +588,7 @@ class _SidebarItem extends StatelessWidget {
         message: collapsed ? item.label : '',
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: item.disabled ? null : onTap,
+          onTap: onTap,
           child: Container(
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -554,75 +652,124 @@ class _RefreshIntervalSelector extends StatelessWidget {
 }
 
 class _NavItem {
-  const _NavItem({
-    required this.path,
-    required this.label,
-    required this.icon,
-    this.disabled = false,
-  });
+  const _NavItem({required this.path, required this.label, required this.icon});
 
   final String path;
   final String label;
   final IconData icon;
-  final bool disabled;
 }
 
-const List<_NavItem> _navItems = <_NavItem>[
-  _NavItem(path: '/', label: 'Обзор', icon: Icons.dashboard_outlined),
-  _NavItem(
-    path: '/backup-health',
-    label: 'Backup health',
-    icon: Icons.health_and_safety_outlined,
+class _NavSection {
+  const _NavSection({
+    required this.label,
+    required this.icon,
+    required this.items,
+  });
+
+  final String label;
+  final IconData icon;
+  final List<_NavItem> items;
+}
+
+const List<_NavSection> _navSections = <_NavSection>[
+  _NavSection(
+    label: 'Главное',
+    icon: Icons.dashboard_outlined,
+    items: <_NavItem>[
+      _NavItem(path: '/', label: 'Обзор', icon: Icons.dashboard_outlined),
+      _NavItem(path: '/search', label: 'Поиск', icon: Icons.search),
+    ],
   ),
-  _NavItem(
-    path: '/backup-schedule',
-    label: 'Backup schedule',
-    icon: Icons.calendar_month_outlined,
-  ),
-  _NavItem(
-    path: '/backup-policy',
-    label: 'Backup policy',
-    icon: Icons.policy_outlined,
-  ),
-  _NavItem(
-    path: '/backup-redundancy',
-    label: 'Backup redundancy',
-    icon: Icons.security_outlined,
-  ),
-  _NavItem(
-    path: '/backup-missing-vm',
-    label: 'Backup missing VM',
-    icon: Icons.manage_search_outlined,
-  ),
-  _NavItem(
-    path: '/pbs-health',
-    label: 'PBS health',
-    icon: Icons.monitor_heart_outlined,
-  ),
-  _NavItem(
-    path: '/pbs-verify',
-    label: 'PBS verify state',
-    icon: Icons.fact_check_outlined,
-  ),
-  _NavItem(
-    path: '/node-health',
-    label: 'Node health',
+  _NavSection(
+    label: 'PVE',
     icon: Icons.hub_outlined,
+    items: <_NavItem>[
+      _NavItem(
+        path: '/node-health',
+        label: 'Node health',
+        icon: Icons.hub_outlined,
+      ),
+      _NavItem(
+        path: '/vm-health',
+        label: 'VM health',
+        icon: Icons.developer_board_outlined,
+      ),
+    ],
   ),
-  _NavItem(
-    path: '/vm-health',
-    label: 'VM health',
+  _NavSection(
+    label: 'Backup',
+    icon: Icons.backup_outlined,
+    items: <_NavItem>[
+      _NavItem(
+        path: '/backup-health',
+        label: 'Backup health',
+        icon: Icons.health_and_safety_outlined,
+      ),
+      _NavItem(
+        path: '/backup-schedule',
+        label: 'Backup schedule',
+        icon: Icons.calendar_month_outlined,
+      ),
+      _NavItem(
+        path: '/backup-policy',
+        label: 'Backup policy',
+        icon: Icons.policy_outlined,
+      ),
+      _NavItem(
+        path: '/backup-redundancy',
+        label: 'Backup redundancy',
+        icon: Icons.security_outlined,
+      ),
+      _NavItem(
+        path: '/backup-missing-vm',
+        label: 'Backup missing VM',
+        icon: Icons.manage_search_outlined,
+      ),
+      _NavItem(
+        path: '/pbs-health',
+        label: 'PBS health',
+        icon: Icons.monitor_heart_outlined,
+      ),
+      _NavItem(
+        path: '/pbs-verify',
+        label: 'PBS verify state',
+        icon: Icons.fact_check_outlined,
+      ),
+    ],
+  ),
+  _NavSection(
+    label: 'Управление',
+    icon: Icons.settings_outlined,
+    items: <_NavItem>[
+      _NavItem(
+        path: '/collection-metrics',
+        label: 'Collection metrics',
+        icon: Icons.query_stats_outlined,
+      ),
+      _NavItem(
+        path: '/sources',
+        label: 'Источники',
+        icon: Icons.storage_outlined,
+      ),
+      _NavItem(
+        path: '/users',
+        label: 'Пользователи',
+        icon: Icons.people_outline,
+      ),
+      _NavItem(path: '/audit', label: 'Аудит', icon: Icons.fact_check_outlined),
+    ],
+  ),
+  _NavSection(
+    label: 'Оборудование',
     icon: Icons.developer_board_outlined,
+    items: <_NavItem>[
+      _NavItem(
+        path: '/hardware-health',
+        label: 'Hardware health',
+        icon: Icons.developer_board_outlined,
+      ),
+    ],
   ),
-  _NavItem(path: '/search', label: 'Поиск', icon: Icons.search),
-  _NavItem(
-    path: '/collection-metrics',
-    label: 'Collection metrics',
-    icon: Icons.query_stats_outlined,
-  ),
-  _NavItem(path: '/sources', label: 'Источники', icon: Icons.storage_outlined),
-  _NavItem(path: '/users', label: 'Пользователи', icon: Icons.people_outline),
-  _NavItem(path: '/audit', label: 'Аудит', icon: Icons.fact_check_outlined),
 ];
 
 Future<void> _refreshAll(BuildContext context) async {
@@ -657,6 +804,7 @@ String _selectedPath(String location) {
     '/pbs-verify' => '/pbs-verify',
     '/node-health' => '/node-health',
     '/vm-health' => '/vm-health',
+    '/hardware-health' => '/hardware-health',
     '/search' => '/search',
     '/collection-metrics' => '/collection-metrics',
     '/users' => '/users',
@@ -679,6 +827,7 @@ String _titleForLocation(String location) {
     '/pbs-verify' => 'PBS verify state',
     '/node-health' => 'Node health',
     '/vm-health' => 'VM health',
+    '/hardware-health' => 'Hardware health',
     '/search' => 'Поиск',
     '/collection-metrics' => 'Collection metrics',
     '/sources' => 'Источники',

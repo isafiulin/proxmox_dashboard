@@ -198,7 +198,68 @@ class SourceDataRepository {
         proxmoxBackup: await loadProxmoxBackup(source.id),
       );
     }
+    if (source.type == 'redfish') {
+      return SourceRuntimeData(redfish: await loadRedfish(source.id));
+    }
     return const SourceRuntimeData();
+  }
+
+  Future<RedfishData> loadRedfish(String sourceId) async {
+    final data = await _map('/redfish/$sourceId/inventory');
+    final thermal = _mapList(data['thermal']);
+    final power = _mapList(data['power']);
+    final temperatures = _mapList(data['temperatures']);
+    final fans = _mapList(data['fans']);
+    final powerSupplies = _mapList(data['powerSupplies']);
+    return RedfishData(
+      identity: _stringMap(data['identity']),
+      systems: _withSourceId(_mapList(data['systems']), sourceId),
+      processors: _withSourceId(_mapList(data['processors']), sourceId),
+      memory: _withSourceId(_mapList(data['memory']), sourceId),
+      chassis: _withSourceId(_mapList(data['chassis']), sourceId),
+      managers: _withSourceId(_mapList(data['managers']), sourceId),
+      temperatures: temperatures.isNotEmpty
+          ? _withSourceId(temperatures, sourceId)
+          : _nestedRows(thermal, 'Temperatures', sourceId),
+      fans: fans.isNotEmpty
+          ? _withSourceId(fans, sourceId)
+          : _nestedRows(thermal, 'Fans', sourceId),
+      powerControl: _withSourceId(_mapList(data['powerControl']), sourceId),
+      powerSupplies: powerSupplies.isNotEmpty
+          ? _withSourceId(powerSupplies, sourceId)
+          : _nestedRows(power, 'PowerSupplies', sourceId),
+      storageControllers: _withSourceId(
+        _mapList(data['storageControllers']),
+        sourceId,
+      ),
+      volumes: _withSourceId(_mapList(data['volumes']), sourceId),
+      drives: _withSourceId(_mapList(data['drives']), sourceId),
+      ethernetInterfaces: _withSourceId(
+        _mapList(data['ethernetInterfaces']),
+        sourceId,
+      ),
+      networkInterfaces: _withSourceId(
+        _mapList(data['networkInterfaces']),
+        sourceId,
+      ),
+      networkAdapters: _withSourceId(
+        _mapList(data['networkAdapters']),
+        sourceId,
+      ),
+      boards: _withSourceId(_mapList(data['boards']), sourceId),
+      discreteSensors: _withSourceId(
+        _mapList(data['discreteSensors']),
+        sourceId,
+      ),
+      thresholdSensors: _withSourceId(
+        _mapList(data['thresholdSensors']),
+        sourceId,
+      ),
+      firmware: _withSourceId(_mapList(data['firmware']), sourceId),
+      logEntries: _withSourceId(_mapList(data['logEntries']), sourceId),
+      healthIssues: _withSourceId(_mapList(data['healthIssues']), sourceId),
+      errors: _withSourceId(_mapList(data['errors']), sourceId),
+    );
   }
 
   Future<List<Map<String, Object?>>> _list(String path) async {
@@ -255,6 +316,11 @@ class SourceDataRepository {
     return <String, Object?>{};
   }
 
+  Future<Map<String, Object?>> _map(String path) async {
+    final json = await _api.get(path);
+    return _stringMap(json['data']);
+  }
+
   Future<List<Map<String, Object?>>> _guestInterfacesOptional(
     String path,
   ) async {
@@ -276,10 +342,63 @@ class SourceDataRepository {
 }
 
 class SourceRuntimeData {
-  const SourceRuntimeData({this.proxmoxVe, this.proxmoxBackup});
+  const SourceRuntimeData({this.proxmoxVe, this.proxmoxBackup, this.redfish});
 
   final ProxmoxVeData? proxmoxVe;
   final ProxmoxBackupData? proxmoxBackup;
+  final RedfishData? redfish;
+}
+
+class RedfishData {
+  const RedfishData({
+    required this.identity,
+    required this.systems,
+    required this.processors,
+    required this.memory,
+    required this.chassis,
+    required this.managers,
+    required this.temperatures,
+    required this.fans,
+    required this.powerControl,
+    required this.powerSupplies,
+    required this.storageControllers,
+    required this.volumes,
+    required this.drives,
+    required this.ethernetInterfaces,
+    required this.networkInterfaces,
+    required this.networkAdapters,
+    required this.boards,
+    required this.discreteSensors,
+    required this.thresholdSensors,
+    required this.firmware,
+    required this.logEntries,
+    required this.healthIssues,
+    required this.errors,
+  });
+
+  final Map<String, Object?> identity;
+  final List<Map<String, Object?>> systems;
+  final List<Map<String, Object?>> processors;
+  final List<Map<String, Object?>> memory;
+  final List<Map<String, Object?>> chassis;
+  final List<Map<String, Object?>> managers;
+  final List<Map<String, Object?>> temperatures;
+  final List<Map<String, Object?>> fans;
+  final List<Map<String, Object?>> powerControl;
+  final List<Map<String, Object?>> powerSupplies;
+  final List<Map<String, Object?>> storageControllers;
+  final List<Map<String, Object?>> volumes;
+  final List<Map<String, Object?>> drives;
+  final List<Map<String, Object?>> ethernetInterfaces;
+  final List<Map<String, Object?>> networkInterfaces;
+  final List<Map<String, Object?>> networkAdapters;
+  final List<Map<String, Object?>> boards;
+  final List<Map<String, Object?>> discreteSensors;
+  final List<Map<String, Object?>> thresholdSensors;
+  final List<Map<String, Object?>> firmware;
+  final List<Map<String, Object?>> logEntries;
+  final List<Map<String, Object?>> healthIssues;
+  final List<Map<String, Object?>> errors;
 }
 
 class ProxmoxVeData {
@@ -339,6 +458,18 @@ List<Map<String, Object?>> _mapList(Object? value) {
       .map((item) => item.cast<String, Object?>())
       .toList();
 }
+
+Map<String, Object?> _stringMap(Object? value) =>
+    value is Map ? value.cast<String, Object?>() : <String, Object?>{};
+
+List<Map<String, Object?>> _nestedRows(
+  List<Map<String, Object?>> parents,
+  String key,
+  String sourceId,
+) => _withSourceId(
+  parents.expand((parent) => _mapList(parent[key])).toList(),
+  sourceId,
+);
 
 List<Map<String, Object?>> _withSourceId(
   List<Map<String, Object?>> rows,

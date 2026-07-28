@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/core/security/credentials_cipher.dart';
 import 'package:neotelecom_backend/features/integrations/proxmox_api_client.dart';
+import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 import 'package:neotelecom_backend/features/sources/source_connection_tester.dart';
 import 'package:test/test.dart';
@@ -69,8 +70,13 @@ void main() {
   });
 
   test('connection test reports plain-text Proxmox auth error', () async {
-    final result = await SourceConnectionTester(allowInsecureTls: false)
-        .test(source, 'root@pam!api:wrong');
+    final result = await SourceConnectionTester(
+      allowInsecureTls: false,
+      redfishClient: RedfishApiClient(
+        allowInsecureTls: false,
+        logger: const AppLogger(enabled: false),
+      ),
+    ).test(source, 'root@pam!api:wrong');
 
     expect(result.ok, isFalse);
     expect(result.message, contains('HTTP 401'));

@@ -42,4 +42,39 @@ void main() {
     expect(items.single.reason, 'checksum mismatch');
     expect(items.single.backupGroup, 'vm/100');
   });
+
+  test('overview alarm ignores stale tasks and reader connection resets', () {
+    final now = DateTime.utc(2026, 7, 28, 12);
+
+    expect(
+      isPbsTaskAlarm(<String, Object?>{
+        'worker_type': 'reader',
+        'status': 'connection error: connection reset',
+        'endtime':
+            now.subtract(const Duration(minutes: 5)).millisecondsSinceEpoch ~/
+            1000,
+      }, now: now),
+      isFalse,
+    );
+    expect(
+      isPbsTaskAlarm(<String, Object?>{
+        'worker_type': 'verify',
+        'status': 'checksum mismatch',
+        'endtime':
+            now.subtract(const Duration(days: 2)).millisecondsSinceEpoch ~/
+            1000,
+      }, now: now),
+      isFalse,
+    );
+    expect(
+      isPbsTaskAlarm(<String, Object?>{
+        'worker_type': 'verify',
+        'status': 'checksum mismatch',
+        'endtime':
+            now.subtract(const Duration(minutes: 5)).millisecondsSinceEpoch ~/
+            1000,
+      }, now: now),
+      isTrue,
+    );
+  });
 }

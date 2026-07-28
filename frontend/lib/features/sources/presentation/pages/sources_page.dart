@@ -237,9 +237,8 @@ class _SourceDialogState extends State<SourceDialog> {
                 ),
                 ButtonSegment<String>(
                   value: 'redfish',
-                  label: Text('iLO'),
+                  label: Text('Redfish'),
                   icon: Icon(Icons.developer_board_outlined),
-                  enabled: false,
                 ),
               ],
               selected: <String>{type},
@@ -262,9 +261,11 @@ class _SourceDialogState extends State<SourceDialog> {
             ],
             AppTextField(
               controller: tokenController,
-              label: 'API token',
+              label: type == 'redfish' ? 'Логин и пароль' : 'API token',
               helperText: editing
-                  ? 'Оставьте пустым, чтобы не менять токен.'
+                  ? 'Оставьте пустым, чтобы не менять credentials.'
+                  : type == 'redfish'
+                  ? 'Формат: username:password'
                   : 'PVE: user@realm!tokenid=secret · PBS: user@realm!tokenid:secret',
               obscureText: !tokenVisible,
               autofillHints: const <String>[],

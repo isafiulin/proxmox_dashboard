@@ -550,7 +550,7 @@ List<_CriticalAlarm> _buildCriticalAlarms(HealthRuntimeData data) {
     );
   }
 
-  for (final task in data.tasks.where(isFailedPbsTask)) {
+  for (final task in data.tasks.where(isPbsTaskAlarm)) {
     final sourceId = task['sourceId']?.toString() ?? '';
     final workerType = task['worker_type']?.toString() ?? 'task';
     alarms.add(
@@ -758,7 +758,7 @@ String sourceTypeLabel(String type) {
   return switch (type) {
     'proxmox_ve' => 'Proxmox VE',
     'proxmox_backup' => 'Proxmox Backup Server',
-    'redfish' => 'iLO / Redfish',
+    'redfish' => 'BMC / Redfish',
     _ => type,
   };
 }

@@ -1,6 +1,6 @@
 # NeoTelecom Infrastructure Dashboard
 
-Единое окно для анализа состояния Proxmox VE, Proxmox Backup Server и, позже, физических серверов через iLO/Redfish.
+Единое окно для анализа состояния Proxmox VE, Proxmox Backup Server и физических серверов через BMC/Redfish.
 
 ## Цель первого этапа
 
@@ -26,7 +26,7 @@ Dart Backend API
       +--> Proxmox Backup Server API
       +--> PostgreSQL
       +--> Redis / queue later
-      +--> iLO / Redfish later
+      +--> BMC / Redfish (HPE iLO, Dell iDRAC, Huawei iBMC)
 ```
 
 Frontend и backend на первом этапе деплоятся на один сервер, но как разные контейнеры.

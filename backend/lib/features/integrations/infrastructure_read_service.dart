@@ -1,17 +1,32 @@
 import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/integrations/proxmox_api_client.dart';
+import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 import 'package:neotelecom_backend/features/sources/sources_service.dart';
 
 class InfrastructureReadService {
-  InfrastructureReadService(this._sources, this._client, this._logger);
+  InfrastructureReadService(
+    this._sources,
+    this._client,
+    this._redfishClient,
+    this._logger,
+  );
 
   final SourcesService _sources;
   final ProxmoxApiClient _client;
+  final RedfishApiClient _redfishClient;
   final AppLogger _logger;
   final Map<String, ({DateTime storedAt, Object? data})> _backupSnapshotCache =
       {};
   final Map<String, Future<Object?>> _backupSnapshotRequests = {};
+
+  Future<Map<String, Object?>> redfishInventory(String sourceId) async {
+    final source = _requireSource(sourceId, 'redfish');
+    return _redfishClient.inventory(
+      source,
+      await _sources.credentialFor(source.id),
+    );
+  }
 
   Future<Object?> proxmoxVeNodes(String sourceId) async {
     final Source source = _requireSource(sourceId, 'proxmox_ve');

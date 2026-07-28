@@ -2,7 +2,7 @@
 
 ## Принцип
 
-Flutter отвечает только за интерфейс. Все обращения к Proxmox VE, Proxmox Backup Server и будущим iLO/Redfish-интеграциям идут через backend.
+Flutter отвечает только за интерфейс. Все обращения к Proxmox VE, Proxmox Backup Server и BMC/Redfish-интеграциям идут через backend.
 
 Frontend UI contract описан отдельно: [ui-guidelines.md](ui-guidelines.md). Новые экраны должны использовать общую дизайн-систему, GoRouter-навигацию, skeleton/loading states и sortable таблицы.
 
@@ -25,7 +25,7 @@ Flutter Web SPA.
 - логин;
 - пользователи: список, создание, блокировка/разблокировка, смена пароля;
 - список подключенных источников;
-- добавление и редактирование источника: `Proxmox VE`, `Proxmox Backup Server`, позже `iLO/Redfish`;
+- добавление и редактирование источника: `Proxmox VE`, `Proxmox Backup Server`, `BMC/Redfish`;
 - общий dashboard;
 - страница Proxmox VE источника;
 - страница Proxmox Backup Server источника;
@@ -211,7 +211,59 @@ Frontend показывает Proxmox VE как cluster endpoint:
 - `critical`: backup старше 48 часов;
 - `missing`: matching snapshot не найден.
 
-### iLO / Redfish later
+### BMC / Redfish
+
+Поддерживаемые семейства строятся на одном стандартном ядре:
+
+- HPE iLO;
+- Dell iDRAC;
+- Huawei iBMC;
+- другие совместимые Redfish BMC.
+
+Vendor определяется по стандартным `Manufacturer`, `Model` и OEM namespace.
+Сначала читаются стандартные поля Redfish, затем скалярные OEM-поля дополняют
+нормализованную строку, не перезаписывая стандартные значения. Отдельный
+vendor-adapter добавляется только для структуры, которую нельзя представить
+общим способом.
+
+Read-only MVP использует стандартный Redfish Service Root и не предполагает
+фиксированные идентификаторы ресурсов. Backend проходит по `@odata.id` из
+`Systems`, `Chassis` и `Managers`, затем читает связанные `Thermal` и `Power`.
+
+Credentials хранятся в существующем зашифрованном поле источника в формате
+`username:password`; разделителем считается только первое двоеточие. Для
+Redfish разрешен только HTTPS. В production используется отдельный read-only
+пользователь BMC и доверенный сертификат; `ALLOW_INSECURE_TLS` нужен только
+для контроллеров с внутренним self-signed сертификатом.
+
+Snapshot имеет стабильные верхнеуровневые секции:
+
+- `identity`;
+- `systems`;
+- `processors`, `memory`;
+- `chassis`;
+- `managers`;
+- `temperatures`, `fans`;
+- `powerControl`, `powerSupplies`;
+- `storageControllers`, `volumes`, `drives`;
+- `ethernetInterfaces`, `networkInterfaces`, `networkAdapters`;
+- `boards`, `firmware`;
+- `discreteSensors`, `thresholdSensors` для vendor raw diagnostics;
+- `logServices`, `logEntries`;
+- `healthIssues` — текущие не-OK состояния стандартных ресурсов;
+- `errors` для частичных ошибок необязательных ресурсов.
+
+Старые Huawei iBMC отдают LogService постранично и каждое событие отдельной
+ссылкой. Polling читает только первую (самую свежую) страницу, максимум 32
+события на LogService. История сохраняется в snapshots; повторное чтение всех
+сотен записей при каждом цикле запрещено. `normalizedSeverity` учитывает как
+Redfish `Severity`, так и Huawei `MessageId`, потому что некоторые сообщения об
+ошибках приходят с `Severity: OK`.
+
+Frontend предоставляет два уровня:
+
+- `/hardware-health` — общая сводка серверов, текущих проблем и событий;
+- `/sources/:sourceId` — полный разрез одного физического сервера.
 
 Собираемые данные:
 
@@ -267,6 +319,8 @@ GET    /api/proxmox-backup/:sourceId/datastores
 GET    /api/proxmox-backup/:sourceId/tasks
 GET    /api/proxmox-backup/:sourceId/datastores/:datastore/snapshots
 
+GET    /api/redfish/:sourceId/inventory
+
 GET    /api/guests/:guestId/backups
 GET    /api/audit-events
 ```
@@ -285,6 +339,7 @@ GET    /api/audit-events
 - audit log на login, user add/update/deactivate, source add/update/delete, test connection;
 - read-only Proxmox tokens для MVP;
 - отдельный system user в Proxmox под этот dashboard.
+- отдельный read-only пользователь Redfish без прав на power/reset/update;
 
 Для Proxmox VE token вводится в формате:
 

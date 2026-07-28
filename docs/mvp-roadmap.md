@@ -73,7 +73,7 @@
 - Фильтры по source/node/VM/severity.
 - Экспорт basic report later.
 
-## Этап 6: iLO/Redfish
+## Этап 6: BMC/Redfish
 
 - Добавление physical server источника.
 - Health по железу.

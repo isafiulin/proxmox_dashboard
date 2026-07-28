@@ -88,6 +88,7 @@ const _byteColumns = <String>{
   'total',
   'avail',
   'free',
+  'CapacityBytes',
 };
 
 const _percentColumns = <String>{'cpu', 'used_fraction'};

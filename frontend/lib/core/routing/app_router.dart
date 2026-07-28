@@ -12,6 +12,7 @@ import 'package:frontend/features/dashboard/presentation/pages/backup_redundancy
 import 'package:frontend/features/dashboard/presentation/pages/backup_schedule_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/collection_metrics_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/dashboard_shell.dart';
+import 'package:frontend/features/dashboard/presentation/pages/hardware_health_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/node_health_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/overview_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/pbs_health_page.dart';
@@ -113,6 +114,11 @@ GoRouter createAppRouter(BuildContext context) {
             path: '/vm-health',
             pageBuilder: (BuildContext context, GoRouterState state) =>
                 _noTransitionPage(state, const VmHealthPage()),
+          ),
+          GoRoute(
+            path: '/hardware-health',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const HardwareHealthPage()),
           ),
           GoRoute(
             path: '/collection-metrics',

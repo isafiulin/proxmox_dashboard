@@ -145,7 +145,10 @@ class CollectionService {
         'tasks': results[1],
       };
     }
-    return <String, Object?>{'status': 'not_implemented'};
+    if (source.type == 'redfish') {
+      return _infrastructure.redfishInventory(source.id);
+    }
+    throw StateError('unsupported_source_type: ${source.type}');
   }
 
   Future<void> prune({DateTime? now}) async {

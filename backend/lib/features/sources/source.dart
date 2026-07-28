@@ -59,8 +59,7 @@ class Source {
     );
   }
 
-  static const allowedTypes = {'proxmox_ve', 'proxmox_backup'};
-  static const reservedTypes = {'redfish'};
+  static const allowedTypes = {'proxmox_ve', 'proxmox_backup', 'redfish'};
 
   final String id;
   String name;

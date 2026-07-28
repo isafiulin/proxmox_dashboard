@@ -73,6 +73,33 @@ bool isFailedPbsTask(Map<String, Object?> task) {
   return status.isNotEmpty && status != 'ok' && status != 'unknown';
 }
 
+bool isPbsTaskAlarm(
+  Map<String, Object?> task, {
+  DateTime? now,
+  Duration maxAge = const Duration(hours: 24),
+}) {
+  if (!isFailedPbsTask(task)) {
+    return false;
+  }
+
+  final type = task['worker_type']?.toString().trim().toLowerCase() ?? '';
+  final status = task['status']?.toString().trim().toLowerCase() ?? '';
+  if (type == 'reader' && status.contains('connection reset')) {
+    return false;
+  }
+
+  final endSeconds = int.tryParse(task['endtime']?.toString() ?? '');
+  if (endSeconds == null || endSeconds <= 0) {
+    return true;
+  }
+  final endedAt = DateTime.fromMillisecondsSinceEpoch(
+    endSeconds * 1000,
+    isUtc: true,
+  );
+  // ponytail: overview alarms expire after 24h; full task history stays on PBS health.
+  return (now ?? DateTime.now()).toUtc().difference(endedAt) <= maxAge;
+}
+
 bool isPbsMaintenanceTask(Map<String, Object?> task) {
   final type = task['worker_type']?.toString().toLowerCase() ?? '';
   return type.contains('verify') ||

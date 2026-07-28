@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:neotelecom_backend/core/security/credentials_cipher.dart';
 import 'package:neotelecom_backend/core/store/json_store.dart';
+import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/integrations/proxmox_auth_header.dart';
+import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
 import 'package:neotelecom_backend/features/audit/audit_service.dart';
 import 'package:neotelecom_backend/features/auth/auth_service.dart';
 import 'package:neotelecom_backend/features/collection/collection_service.dart';
@@ -33,7 +35,13 @@ void main() {
       store,
       audit,
       credentialsCipher,
-      SourceConnectionTester(allowInsecureTls: true),
+      SourceConnectionTester(
+        allowInsecureTls: true,
+        redfishClient: RedfishApiClient(
+          allowInsecureTls: true,
+          logger: const AppLogger(enabled: false),
+        ),
+      ),
     );
     await auth.bootstrapAdmin();
   });
@@ -111,16 +119,42 @@ void main() {
     );
   });
 
-  test('source service rejects redfish while feature is disabled', () async {
+  test('source service accepts HTTPS redfish source with basic credentials',
+      () async {
+    final actor = users.list().single;
+
+    final source = await sources.create(
+      actorUserId: actor.id,
+      name: 'ibmc-main',
+      type: 'redfish',
+      baseUrl: 'https://ibmc.example.local',
+      token: 'monitor:secret-password',
+    );
+
+    expect(source.type, 'redfish');
+    expect(await sources.credentialFor(source.id), 'monitor:secret-password');
+  });
+
+  test('source service validates redfish transport and credentials', () async {
     final actor = users.list().single;
 
     await expectLater(
       sources.create(
         actorUserId: actor.id,
-        name: 'ilo-main',
+        name: 'ibmc-main',
         type: 'redfish',
-        baseUrl: 'https://ilo.example.local',
-        token: 'secret-token',
+        baseUrl: 'http://ibmc.example.local',
+        token: 'monitor:secret-password',
+      ),
+      throwsA(isA<SourceInputException>()),
+    );
+    await expectLater(
+      sources.create(
+        actorUserId: actor.id,
+        name: 'ibmc-main',
+        type: 'redfish',
+        baseUrl: 'https://ibmc.example.local',
+        token: 'missing-password-separator',
       ),
       throwsA(isA<SourceInputException>()),
     );

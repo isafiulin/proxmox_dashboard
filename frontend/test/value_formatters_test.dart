@@ -11,6 +11,7 @@ void main() {
   test('formats table byte columns without scientific notation', () {
     expect(formatTableValue('disk', 3358298472448), '3.1 TB');
     expect(formatTableValue('maxmem', 8388608000), '7.8 GB');
+    expect(formatTableValue('CapacityBytes', 7999999442944), '7.3 TB');
   });
 
   test('formats proxmox task timestamps as local date time', () {

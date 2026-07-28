@@ -102,12 +102,283 @@ class _SourceDetailContent extends StatelessWidget {
             if (source.type == 'proxmox_backup') {
               return _ProxmoxBackupSections(data: state.data?.proxmoxBackup);
             }
-            return const EmptyCardState(
-              icon: Icons.developer_board_outlined,
-              text: 'iLO/Redfish будет добавлен позже.',
-            );
+            if (source.type == 'redfish') {
+              return _RedfishSections(data: state.data?.redfish);
+            }
+            return const SizedBox.shrink();
           },
         ),
+      ],
+    );
+  }
+}
+
+class _RedfishSections extends StatelessWidget {
+  const _RedfishSections({required this.data});
+
+  final RedfishData? data;
+
+  @override
+  Widget build(BuildContext context) {
+    final identity = data?.identity ?? <String, Object?>{};
+    final system = data?.systems.firstOrNull;
+    final status = system?['Status'];
+    final health = status is Map ? status['Health']?.toString() : null;
+    final totalMemoryMiB =
+        data?.memory.fold<int>(
+          0,
+          (total, row) =>
+              total + (int.tryParse(row['CapacityMiB']?.toString() ?? '') ?? 0),
+        ) ??
+        0;
+    return Column(
+      children: <Widget>[
+        Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: <Widget>[
+            MetricCard(
+              label: 'Модель',
+              value: identity['model']?.toString() ?? 'unknown',
+              icon: Icons.developer_board_outlined,
+            ),
+            MetricCard(
+              label: 'Power',
+              value: system?['PowerState']?.toString() ?? 'unknown',
+              icon: Icons.power_settings_new,
+            ),
+            MetricCard(
+              label: 'Health',
+              value: health ?? 'unknown',
+              icon: Icons.health_and_safety_outlined,
+            ),
+            MetricCard(
+              label: 'CPU / RAM',
+              value:
+                  '${data?.processors.length ?? 0} / ${(totalMemoryMiB / 1024).toStringAsFixed(0)} GiB',
+              icon: Icons.memory_outlined,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Текущие неисправности',
+          rows: data?.healthIssues ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'resourceType',
+            'name',
+            'health',
+            'state',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Процессоры',
+          rows: data?.processors ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Manufacturer',
+            'Model',
+            'Socket',
+            'TotalCores',
+            'TotalThreads',
+            'MaxSpeedMHz',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Память',
+          rows: data?.memory ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'DeviceLocator',
+            'Manufacturer',
+            'CapacityMiB',
+            'OperatingSpeedMhz',
+            'MemoryDeviceType',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Температуры',
+          rows: data?.temperatures ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'ReadingCelsius',
+            'UpperThresholdCritical',
+            'UpperThresholdFatal',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Вентиляторы',
+          rows: data?.fans ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Reading',
+            'ReadingUnits',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Блоки питания',
+          rows: data?.powerSupplies ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Model',
+            'LineInputVoltage',
+            'PowerInputWatts',
+            'PowerOutputWatts',
+            'PowerCapacityWatts',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'RAID-контроллеры',
+          rows: data?.storageControllers ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Model',
+            'FirmwareVersion',
+            'SpeedGbps',
+            'MemorySizeMiB',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'RAID volumes',
+          rows: data?.volumes ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'VolumeName',
+            'VolumeRaidLevel',
+            'CapacityBytes',
+            'AccessPolicy',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Физические диски',
+          rows: data?.drives ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Manufacturer',
+            'Model',
+            'MediaType',
+            'Protocol',
+            'CapacityBytes',
+            'TemperatureCelsius',
+            'HoursOfPoweredUp',
+            'FirmwareStatus',
+            'FailurePredicted',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Сетевые порты',
+          rows: data?.ethernetInterfaces ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Id',
+            'MACAddress',
+            'SpeedMbps',
+            'LinkStatus',
+            'InterfaceEnabled',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Сетевые адаптеры',
+          rows: data?.networkAdapters ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Manufacturer',
+            'Model',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Firmware inventory',
+          rows: data?.firmware ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Version',
+            'Updateable',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Последние события BMC',
+          rows: data?.logEntries ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Created',
+            'normalizedSeverity',
+            'Message',
+            'MessageId',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'Платы',
+          rows: data?.boards ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Manufacturer',
+            'Model',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'BMC discrete sensors (raw)',
+          rows: data?.discreteSensors ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>['Name', 'Status'],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'BMC threshold sensors (raw)',
+          rows: data?.thresholdSensors ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'ReadingValue',
+            'ReadingUnits',
+            'Status',
+          ],
+        ),
+        const SizedBox(height: 16),
+        GenericDataSection(
+          title: 'BMC controller',
+          rows: data?.managers ?? <Map<String, Object?>>[],
+          preferredColumns: const <String>[
+            'Name',
+            'Model',
+            'FirmwareVersion',
+            'DateTime',
+            'DateTimeLocalOffset',
+            'Status',
+          ],
+        ),
+        if (data?.errors.isNotEmpty == true) ...<Widget>[
+          const SizedBox(height: 16),
+          GenericDataSection(
+            title: 'Redfish API errors',
+            rows: data!.errors,
+            preferredColumns: const <String>[
+              'operation',
+              'path',
+              'statusCode',
+              'message',
+            ],
+          ),
+        ],
       ],
     );
   }

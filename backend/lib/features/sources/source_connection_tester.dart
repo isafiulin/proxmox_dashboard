@@ -2,12 +2,17 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:neotelecom_backend/features/integrations/proxmox_auth_header.dart';
+import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 
 class SourceConnectionTester {
-  SourceConnectionTester({required this.allowInsecureTls});
+  SourceConnectionTester({
+    required this.allowInsecureTls,
+    required RedfishApiClient redfishClient,
+  }) : _redfishClient = redfishClient;
 
   final bool allowInsecureTls;
+  final RedfishApiClient _redfishClient;
 
   Future<ConnectionTestResult> test(Source source, String credential) async {
     if (source.type == 'proxmox_ve') {
@@ -17,11 +22,7 @@ class SourceConnectionTester {
       return _testProxmox(source, credential);
     }
     if (source.type == 'redfish') {
-      return const ConnectionTestResult(
-        ok: false,
-        status: 'unknown',
-        message: 'Redfish/iLO connection test is not implemented yet.',
-      );
+      return _testRedfish(source, credential);
     }
 
     return const ConnectionTestResult(
@@ -29,6 +30,38 @@ class SourceConnectionTester {
       status: 'critical',
       message: 'Unsupported source type.',
     );
+  }
+
+  Future<ConnectionTestResult> _testRedfish(
+    Source source,
+    String credential,
+  ) async {
+    try {
+      final root = await _redfishClient.get(
+        source,
+        credential,
+        '/redfish/v1/',
+      );
+      final version = root['RedfishVersion']?.toString() ?? 'unknown';
+      if (root['Systems'] is! Map || root['Chassis'] is! Map) {
+        return const ConnectionTestResult(
+          ok: false,
+          status: 'critical',
+          message: 'Redfish Service Root has no Systems or Chassis links.',
+        );
+      }
+      return ConnectionTestResult(
+        ok: true,
+        status: 'ok',
+        message: 'Connected. Redfish version: $version',
+      );
+    } on Object catch (error) {
+      return ConnectionTestResult(
+        ok: false,
+        status: 'critical',
+        message: error.toString(),
+      );
+    }
   }
 
   Future<ConnectionTestResult> _testProxmox(

@@ -10,6 +10,7 @@ import 'features/collection/collection_service.dart';
 import 'features/dashboard/dashboard_service.dart';
 import 'features/integrations/infrastructure_read_service.dart';
 import 'features/integrations/proxmox_api_client.dart';
+import 'features/integrations/redfish_api_client.dart';
 import 'features/settings/settings_service.dart';
 import 'features/sources/source_connection_tester.dart';
 import 'features/sources/sources_service.dart';
@@ -62,15 +63,23 @@ class App {
       allowInsecureTls: allowInsecureTls,
       logger: logger,
     );
+    final redfishClient = RedfishApiClient(
+      allowInsecureTls: allowInsecureTls,
+      logger: logger,
+    );
     final sourcesService = SourcesService(
       store,
       audit,
       credentialsCipher,
-      SourceConnectionTester(allowInsecureTls: allowInsecureTls),
+      SourceConnectionTester(
+        allowInsecureTls: allowInsecureTls,
+        redfishClient: redfishClient,
+      ),
     );
     final infrastructure = InfrastructureReadService(
       sourcesService,
       proxmoxClient,
+      redfishClient,
       logger,
     );
     final collection = CollectionService(store, infrastructure, audit, logger);
@@ -487,6 +496,15 @@ class App {
               request.uri.queryParameters['ns'] ??
               '',
         ),
+      });
+    }
+
+    final redfishRoute = RegExp(
+      r'^/api/redfish/([^/]+)/inventory$',
+    ).firstMatch(path);
+    if (redfishRoute != null && method == 'GET') {
+      return sendJson(request, {
+        'data': await infrastructure.redfishInventory(redfishRoute.group(1)!),
       });
     }
 

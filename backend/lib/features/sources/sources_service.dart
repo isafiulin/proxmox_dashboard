@@ -4,6 +4,7 @@ import 'package:neotelecom_backend/core/store/app_store.dart';
 import 'package:neotelecom_backend/features/audit/audit_service.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 import 'package:neotelecom_backend/features/sources/source_connection_tester.dart';
+import 'package:neotelecom_backend/features/integrations/redfish_api_client.dart';
 
 class SourcesService {
   SourcesService(
@@ -33,9 +34,11 @@ class SourcesService {
   }) async {
     final normalizedName = name.trim();
     final normalizedUrl = baseUrl.trim();
+    final normalizedToken = token.trim();
     if (normalizedName.isEmpty ||
         !Source.allowedTypes.contains(type) ||
-        !_isValidAbsoluteUrl(normalizedUrl)) {
+        !_isValidSourceUrl(normalizedUrl, type) ||
+        (type == 'redfish' && !isValidRedfishCredential(normalizedToken))) {
       throw const SourceInputException('invalid_source_payload');
     }
 
@@ -44,7 +47,7 @@ class SourcesService {
         type: type,
         baseUrl: normalizedUrl,
         backupNamespace: backupNamespace.trim(),
-        credential: await _credentialsCipher.encrypt(token.trim()));
+        credential: await _credentialsCipher.encrypt(normalizedToken));
     _store.sources.add(source);
     _audit.record('source.create',
         actorUserId: actorUserId, targetId: source.id, details: {'type': type});
@@ -64,18 +67,24 @@ class SourcesService {
     final source = byId(sourceId);
     if (source == null) throw const SourceInputException('source_not_found');
 
+    final effectiveType = type ?? source.type;
+    final effectiveUrl = baseUrl?.trim() ?? source.baseUrl;
+    final effectiveCredential = token?.trim().isNotEmpty == true
+        ? token!.trim()
+        : await _credentialsCipher.decrypt(source.credential);
+    if (!Source.allowedTypes.contains(effectiveType) ||
+        !_isValidSourceUrl(effectiveUrl, effectiveType) ||
+        (effectiveType == 'redfish' &&
+            !isValidRedfishCredential(effectiveCredential))) {
+      throw const SourceInputException('invalid_source_payload');
+    }
+
     if (name != null) source.name = name.trim();
     if (type != null) {
-      if (!Source.allowedTypes.contains(type)) {
-        throw const SourceInputException('invalid_source_payload');
-      }
       source.type = type;
     }
     if (baseUrl != null) {
-      final normalizedUrl = baseUrl.trim();
-      if (!_isValidAbsoluteUrl(normalizedUrl))
-        throw const SourceInputException('invalid_source_payload');
-      source.baseUrl = normalizedUrl;
+      source.baseUrl = effectiveUrl;
     }
     if (token != null && token.trim().isNotEmpty) {
       source.credential = await _credentialsCipher.encrypt(token.trim());
@@ -132,11 +141,12 @@ class SourcesService {
   }
 }
 
-bool _isValidAbsoluteUrl(String value) {
+bool _isValidSourceUrl(String value, String type) {
   final uri = Uri.tryParse(value);
-  return uri != null &&
+  final valid = uri != null &&
       (uri.scheme == 'http' || uri.scheme == 'https') &&
       uri.host.isNotEmpty;
+  return valid && (type != 'redfish' || uri.scheme == 'https');
 }
 
 class SourceInputException implements Exception {
