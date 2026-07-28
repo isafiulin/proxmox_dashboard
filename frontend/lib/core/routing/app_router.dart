@@ -19,6 +19,7 @@ import 'package:frontend/features/dashboard/presentation/pages/pbs_health_page.d
 import 'package:frontend/features/dashboard/presentation/pages/pbs_verify_page.dart';
 import 'package:frontend/features/dashboard/presentation/pages/vm_health_page.dart';
 import 'package:frontend/features/search/presentation/pages/search_page.dart';
+import 'package:frontend/features/settings/presentation/pages/notification_settings_page.dart';
 import 'package:frontend/features/sources/presentation/pages/guest_detail_page.dart';
 import 'package:frontend/features/sources/presentation/pages/node_detail_page.dart';
 import 'package:frontend/features/sources/presentation/pages/source_detail_page.dart';
@@ -124,6 +125,11 @@ GoRouter createAppRouter(BuildContext context) {
             path: '/collection-metrics',
             pageBuilder: (BuildContext context, GoRouterState state) =>
                 _noTransitionPage(state, const CollectionMetricsPage()),
+          ),
+          GoRoute(
+            path: '/notification-settings',
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _noTransitionPage(state, const NotificationSettingsPage()),
           ),
           GoRoute(
             path: '/sources',

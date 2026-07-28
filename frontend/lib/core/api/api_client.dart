@@ -108,11 +108,17 @@ String _errorMessage(String? code) {
     'email_already_exists' => 'Пользователь с таким email уже есть.',
     'cannot_deactivate_last_admin' =>
       'Нельзя заблокировать себя или последнего admin.',
-    'invalid_source_payload' => 'Заполните название, тип и корректный URL.',
+    'invalid_source_payload' =>
+      'Проверьте название, адрес и credentials. Для IPMI укажите IP или ipmi://IP и username:password.',
     'redfish_unavailable' =>
       'BMC пока недоступен, успешных данных Redfish ещё нет.',
     'bmc_unavailable' =>
       'BMC пока недоступен, успешных данных мониторинга ещё нет.',
+    'invalid_telegram_settings' =>
+      'Проверьте токен Telegram, Chat ID и выбранный уровень.',
+    'telegram_not_configured' => 'Сначала сохраните токен Telegram и Chat ID.',
+    'telegram_send_failed' =>
+      'Telegram не принял сообщение. Проверьте токен, Chat ID и доступ бота к чату.',
     _ => code ?? 'Ошибка API.',
   };
 }

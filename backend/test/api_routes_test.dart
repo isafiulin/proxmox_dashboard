@@ -36,8 +36,8 @@ void main() {
     expect(response.json['databaseStatus'], 'ok');
     expect(response.json['backendVersion'], isA<String>());
     expect(response.json['frontendVersion'], isA<String>());
-    expect(response.json['backendVersion'], '0.2.5');
-    expect(response.json['frontendVersion'], '1.1.6+8');
+    expect(response.json['backendVersion'], '0.3.2');
+    expect(response.json['frontendVersion'], '1.2.1+10');
     expect(response.json['gitCommit'], isA<String>());
     expect(response.json['uptimeSeconds'], isA<int>());
     expect(response.json['collectionIntervalMinutes'], isA<int>());
@@ -99,7 +99,14 @@ void main() {
       'PATCH',
       '/settings',
       token: token,
-      body: <String, Object?>{'collectionIntervalMinutes': 15},
+      body: <String, Object?>{
+        'collectionIntervalMinutes': 15,
+        'telegramEnabled': false,
+        'telegramBotToken': '123456789:abcdefghijklmnopqrstuvwx',
+        'telegramChatId': '-1001234567890',
+        'telegramMinimumSeverity': 'critical',
+        'telegramNotifyRecovery': true,
+      },
     );
     expect(settingsResponse.statusCode, HttpStatus.ok);
     expect(
@@ -107,6 +114,12 @@ void main() {
           as Map<String, Object?>)['collectionIntervalMinutes'],
       15,
     );
+    final settings = settingsResponse.json['settings']! as Map<String, Object?>;
+    expect(settings['hasTelegramBotToken'], isTrue);
+    expect(settings['telegramChatId'], '-1001234567890');
+    expect(settings['telegramMinimumSeverity'], 'critical');
+    expect(settings, isNot(contains('telegramBotTokenCiphertext')));
+    expect(settings.toString(), isNot(contains('abcdefghijklmnopqrstuvwx')));
 
     final TestResponse profileResponse = await harness.request(
       'PATCH',
@@ -133,6 +146,18 @@ void main() {
     expect(response.json['sources'], isA<List<Object?>>());
     expect(response.json['totalPolls'], isA<int>());
     expect(response.json['totalErrors'], isA<int>());
+  });
+
+  test('telegram test requires saved bot configuration', () async {
+    final token = await harness.loginToken();
+    final response = await harness.request(
+      'POST',
+      '/settings/telegram/test',
+      token: token,
+    );
+
+    expect(response.statusCode, HttpStatus.badGateway);
+    expect(response.json['error'], 'telegram_not_configured');
   });
 
   test('authenticated admin can edit source metadata', () async {

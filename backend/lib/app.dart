@@ -13,6 +13,8 @@ import 'features/integrations/proxmox_api_client.dart';
 import 'features/integrations/redfish_api_client.dart';
 import 'features/integrations/old_ilo2_client.dart';
 import 'features/integrations/ipmi_client.dart';
+import 'features/notifications/notification_service.dart';
+import 'features/notifications/telegram_bot_client.dart';
 import 'features/settings/settings_service.dart';
 import 'features/sources/source_connection_tester.dart';
 import 'features/sources/sources_service.dart';
@@ -30,6 +32,7 @@ class App {
     required this.infrastructure,
     required this.settings,
     required this.collection,
+    required this.notifications,
     required this.logger,
     required this.storeDriver,
     required this.startedAt,
@@ -44,6 +47,7 @@ class App {
   final InfrastructureReadService infrastructure;
   final SettingsService settings;
   final CollectionService collection;
+  final NotificationService notifications;
   final AppLogger logger;
   final String storeDriver;
   final DateTime startedAt;
@@ -90,7 +94,20 @@ class App {
       ipmiClient,
       logger,
     );
-    final collection = CollectionService(store, infrastructure, audit, logger);
+    final notifications = NotificationService(
+      store,
+      credentialsCipher,
+      TelegramBotClient(),
+      logger,
+    );
+    final collection = CollectionService(
+      store,
+      infrastructure,
+      audit,
+      logger,
+      notifications,
+    );
+    final settingsService = SettingsService(store, audit, credentialsCipher);
     final app = App._(
       store: store,
       audit: audit,
@@ -99,8 +116,9 @@ class App {
       sources: sourcesService,
       dashboard: DashboardService(store),
       infrastructure: infrastructure,
-      settings: SettingsService(store, audit),
+      settings: settingsService,
       collection: collection,
+      notifications: notifications,
       logger: logger,
       storeDriver: storeDriver,
       startedAt: DateTime.now().toUtc(),
@@ -146,6 +164,9 @@ class App {
     } on SettingsInputException catch (error) {
       await sendJson(request, {'error': error.code},
           statusCode: _statusForInputError(error.code));
+    } on TelegramException catch (error) {
+      await sendJson(request, {'error': error.code},
+          statusCode: HttpStatus.badGateway);
     } on ProxmoxApiException catch (error) {
       logger.warning('integration.proxmox_api_error', <String, Object?>{
         'message': error.message,
@@ -198,10 +219,10 @@ class App {
       return sendJson(request, {
         'status': databaseHealthy ? 'ok' : 'degraded',
         'service': 'neotelecom-backend',
-        'version': Platform.environment['BACKEND_VERSION'] ?? '0.2.5',
-        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.2.5',
+        'version': Platform.environment['BACKEND_VERSION'] ?? '0.3.2',
+        'backendVersion': Platform.environment['BACKEND_VERSION'] ?? '0.3.2',
         'frontendVersion':
-            Platform.environment['FRONTEND_VERSION'] ?? '1.1.6+8',
+            Platform.environment['FRONTEND_VERSION'] ?? '1.2.1+10',
         'gitCommit': Platform.environment['GIT_COMMIT'] ?? 'unknown',
         'time': now.toIso8601String(),
         'startedAt': startedAt.toIso8601String(),
@@ -259,18 +280,34 @@ class App {
     }
 
     if (method == 'GET' && path == '/api/settings') {
-      return sendJson(request, {'settings': settings.current.toJson()});
+      return sendJson(request, {'settings': settings.current.toPublicJson()});
     }
 
     if (method == 'PATCH' && path == '/api/settings') {
       final body = await readJson(request);
+      final current = settings.current;
       final updated = await settings.update(
         actorUserId: currentUser.id,
-        collectionIntervalMinutes:
-            body['collectionIntervalMinutes'] as int? ?? 30,
+        collectionIntervalMinutes: body['collectionIntervalMinutes'] as int? ??
+            current.collectionIntervalMinutes,
+        telegramEnabled:
+            body['telegramEnabled'] as bool? ?? current.telegramEnabled,
+        telegramChatId:
+            body['telegramChatId']?.toString() ?? current.telegramChatId,
+        telegramMinimumSeverity: body['telegramMinimumSeverity']?.toString() ??
+            current.telegramMinimumSeverity,
+        telegramNotifyRecovery: body['telegramNotifyRecovery'] as bool? ??
+            current.telegramNotifyRecovery,
+        telegramBotToken: body['telegramBotToken']?.toString(),
+        clearTelegramBotToken: body['clearTelegramBotToken'] as bool? ?? false,
       );
       await collection.restart();
-      return sendJson(request, {'settings': updated.toJson()});
+      return sendJson(request, {'settings': updated.toPublicJson()});
+    }
+
+    if (method == 'POST' && path == '/api/settings/telegram/test') {
+      await notifications.testTelegram();
+      return sendJson(request, {'ok': true});
     }
 
     if (method == 'GET' && path == '/api/users') {

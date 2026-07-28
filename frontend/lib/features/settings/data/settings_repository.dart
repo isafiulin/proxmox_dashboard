@@ -22,4 +22,30 @@ class SettingsRepository {
       json['settings'] as Map<String, Object?>? ?? <String, Object?>{},
     );
   }
+
+  Future<SystemSettings> updateTelegram({
+    required bool enabled,
+    required String chatId,
+    required String minimumSeverity,
+    required bool notifyRecovery,
+    String botToken = '',
+    bool clearBotToken = false,
+  }) async {
+    final json = await _api.patch(
+      '/settings',
+      body: <String, Object?>{
+        'telegramEnabled': enabled,
+        'telegramChatId': chatId,
+        'telegramMinimumSeverity': minimumSeverity,
+        'telegramNotifyRecovery': notifyRecovery,
+        if (botToken.isNotEmpty) 'telegramBotToken': botToken,
+        if (clearBotToken) 'clearTelegramBotToken': true,
+      },
+    );
+    return SystemSettings.fromJson(
+      json['settings'] as Map<String, Object?>? ?? <String, Object?>{},
+    );
+  }
+
+  Future<void> testTelegram() => _api.post('/settings/telegram/test');
 }

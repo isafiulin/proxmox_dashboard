@@ -6,6 +6,7 @@ import 'package:neotelecom_backend/core/logging/app_logger.dart';
 import 'package:neotelecom_backend/features/audit/audit_service.dart';
 import 'package:neotelecom_backend/features/collection/data_snapshot.dart';
 import 'package:neotelecom_backend/features/integrations/infrastructure_read_service.dart';
+import 'package:neotelecom_backend/features/notifications/notification_service.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
 
 const snapshotRetention = Duration(days: 7);
@@ -16,12 +17,14 @@ class CollectionService {
     this._infrastructure,
     this._audit,
     this._logger,
+    this._notifications,
   );
 
   final AppStore _store;
   final InfrastructureReadService _infrastructure;
   final AuditService _audit;
   final AppLogger _logger;
+  final NotificationService _notifications;
   Timer? _timer;
   final Map<String, Future<DataSnapshot>> _activeCollections = {};
 
@@ -188,6 +191,9 @@ class CollectionService {
     required Source source,
   }) async {
     final stopwatch = Stopwatch()..start();
+    final previous = latest(sourceId: source.id)
+        .where((item) => item.sourceType == source.type)
+        .firstOrNull;
     late final DataSnapshot snapshot;
     try {
       final payload = await _payloadFor(source);
@@ -234,6 +240,11 @@ class CollectionService {
       actorUserId: actorUserId,
       targetId: source.id,
       details: <String, Object?>{'status': snapshot.status},
+    );
+    await _notifications.onSnapshot(
+      source: source,
+      snapshot: snapshot,
+      previous: previous,
     );
     return snapshot;
   }

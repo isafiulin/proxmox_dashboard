@@ -58,7 +58,9 @@ iLO 2 Advanced 1.78 at 15:43:13 Jun 10 2009
   Targets
     cpu1
     memory1
+    memory2
     fan1
+    fan2
     sensor1
     powersupply1
   Properties
@@ -72,38 +74,60 @@ cpu1
   Properties
     name=Intel Xeon
     speed=3000MHz
-    healthstate=Ok
+    number_cores=4
+    status=OK
   Verbs
     cd version exit show set
 memory1
   Targets
   Properties
-    name=DIMM 1
+    location=DIMM 1
     size=4GB
-    healthstate=Ok
+    frequency=667MHz
+    status=OK
+  Verbs
+    cd version exit show set
+memory2
+  Targets
+  Properties
+    location=DIMM 2
+    size=Not Installed
   Verbs
     cd version exit show set
 fan1
   Targets
   Properties
-    name=Fan 1
-    speed=42 percent
-    healthstate=Ok
+    DeviceID=Fan 1
+    ElementName=System
+    DesiredSpeed=42 percent
+    HealthState=Ok
+  Verbs
+    cd version exit show set
+fan2
+  Targets
+  Properties
+    DeviceID=Fan 2
+    ElementName=System
+    OperationalStatus=Not Installed
+    HealthState=Not Installed
   Verbs
     cd version exit show set
 sensor1
   Targets
   Properties
-    name=Ambient Temperature
-    currentreading=24 degrees C
-    healthstate=Ok
+    DeviceID=01-Inlet Ambient
+    ElementName=System Board
+    RateUnits=Celsius
+    CurrentReading=24
+    HealthState=Ok
   Verbs
     cd version exit show set
 powersupply1
   Targets
   Properties
-    name=Power Supply 1
-    healthstate=NonCritical
+    DeviceID=Power Supply 1
+    ElementName=Power Supply Bay
+    HealthState=NonCritical
   Verbs
     cd version exit show set
 ''';
@@ -133,10 +157,20 @@ record315
     expect((inventory['identity'] as Map)['model'], 'ProLiant DL360 G5');
     expect((inventory['systems'] as List).single['PowerState'], 'On');
     expect((inventory['processors'] as List), hasLength(1));
+    expect((inventory['processors'] as List).single['TotalCores'], 4);
     expect((inventory['memory'] as List).single['CapacityMiB'], 4096);
-    expect((inventory['fans'] as List), hasLength(1));
-    expect((inventory['temperatures'] as List), hasLength(1));
+    expect((inventory['memory'] as List).single['OperatingSpeedMhz'], 667);
+    expect((inventory['fans'] as List).single['Reading'], 42);
+    expect(
+      (inventory['temperatures'] as List).single['Name'],
+      'System Board · 01-Inlet Ambient',
+    );
+    expect((inventory['temperatures'] as List).single['ReadingCelsius'], 24);
     expect((inventory['powerSupplies'] as List), hasLength(1));
+    expect(
+      ((inventory['powerSupplies'] as List).single['Status'] as Map)['Health'],
+      'Warning',
+    );
     expect((inventory['logEntries'] as List).single['Id'], '315');
   });
 }

@@ -32,4 +32,35 @@ class SettingsCubit extends Cubit<SettingsState> {
       ),
     );
   }
+
+  Future<void> updateTelegram({
+    required bool enabled,
+    required String chatId,
+    required String minimumSeverity,
+    required bool notifyRecovery,
+    String botToken = '',
+    bool clearBotToken = false,
+  }) async {
+    emit(state.copyWith(status: SettingsStatus.loading));
+    try {
+      emit(
+        SettingsState(
+          status: SettingsStatus.ready,
+          settings: await _repository.updateTelegram(
+            enabled: enabled,
+            chatId: chatId,
+            minimumSeverity: minimumSeverity,
+            notifyRecovery: notifyRecovery,
+            botToken: botToken,
+            clearBotToken: clearBotToken,
+          ),
+        ),
+      );
+    } catch (_) {
+      emit(state.copyWith(status: SettingsStatus.failure));
+      rethrow;
+    }
+  }
+
+  Future<void> testTelegram() => _repository.testTelegram();
 }

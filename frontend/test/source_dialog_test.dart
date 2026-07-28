@@ -27,4 +27,19 @@ void main() {
     final fields = tester.widgetList<EditableText>(find.byType(EditableText));
     expect(fields.last.controller.text, isEmpty);
   });
+
+  testWidgets('selecting IPMI makes the source format visible and usable', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SourceDialog())),
+    );
+
+    await tester.tap(find.text('IPMI'));
+    await tester.pump();
+
+    expect(find.text('IPMI URL'), findsOneWidget);
+    expect(find.text('ipmi://'), findsOneWidget);
+    expect(find.text('Формат: username:password'), findsOneWidget);
+  });
 }

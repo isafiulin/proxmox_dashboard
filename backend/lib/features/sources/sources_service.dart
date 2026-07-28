@@ -33,7 +33,7 @@ class SourcesService {
     String backupNamespace = '',
   }) async {
     final normalizedName = name.trim();
-    final normalizedUrl = baseUrl.trim();
+    final normalizedUrl = _normalizeSourceUrl(baseUrl, type);
     final normalizedToken = token.trim();
     if (normalizedName.isEmpty ||
         !Source.allowedTypes.contains(type) ||
@@ -69,7 +69,9 @@ class SourcesService {
     if (source == null) throw const SourceInputException('source_not_found');
 
     final effectiveType = type ?? source.type;
-    final effectiveUrl = baseUrl?.trim() ?? source.baseUrl;
+    final effectiveUrl = baseUrl == null
+        ? source.baseUrl
+        : _normalizeSourceUrl(baseUrl, effectiveType);
     final effectiveCredential = token?.trim().isNotEmpty == true
         ? token!.trim()
         : await _credentialsCipher.decrypt(source.credential);
@@ -156,6 +158,14 @@ bool _isValidSourceUrl(String value, String type) {
       (uri.scheme == 'http' || uri.scheme == 'https') &&
       uri.host.isNotEmpty;
   return valid && (type != 'redfish' || uri.scheme == 'https');
+}
+
+String _normalizeSourceUrl(String value, String type) {
+  final normalized = value.trim();
+  if (normalized.isEmpty || normalized.contains('://')) return normalized;
+  if (type == 'ipmi') return 'ipmi://$normalized';
+  if (type == 'old_ilo2') return 'ssh://$normalized';
+  return normalized;
 }
 
 class SourceInputException implements Exception {

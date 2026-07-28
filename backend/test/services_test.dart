@@ -183,11 +183,12 @@ void main() {
       actorUserId: actor.id,
       name: 'supermicro-ipmi',
       type: 'ipmi',
-      baseUrl: 'ipmi://192.168.2.206',
+      baseUrl: '192.168.2.206',
       token: 'monitor:secret-password',
     );
 
     expect(source.type, 'ipmi');
+    expect(source.baseUrl, 'ipmi://192.168.2.206');
     expect(await sources.credentialFor(source.id), 'monitor:secret-password');
   });
 

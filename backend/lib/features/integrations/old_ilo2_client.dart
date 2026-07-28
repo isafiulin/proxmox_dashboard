@@ -116,20 +116,20 @@ Map<String, Object?> parseOldIlo2Inventory(
       'Model': root['name'],
       'PowerState': _powerState(root['enabledstate']),
       'Status': _status(root),
-      'PresentPowerWatts': _number(root['oemhp_PresentPower']),
-      'AveragePowerWatts': _number(root['oemhp_AveragePower']),
-      'MaxPowerWatts': _number(root['oemhp_MaxPower']),
-      'MinPowerWatts': _number(root['oemhp_MinPower']),
+      'PresentPowerWatts': _number(root['oemhp_presentpower']),
+      'AveragePowerWatts': _number(root['oemhp_averagepower']),
+      'MaxPowerWatts': _number(root['oemhp_maxpower']),
+      'MinPowerWatts': _number(root['oemhp_minpower']),
     },
   ];
   final processors = _rows(resources, '/system1/cpu', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
-      'Name': row['name'] ?? _leaf(path),
+      'Name': _resourceName(row, _leaf(path)),
       'Socket': _leaf(path),
       'Model': row['model'],
       'MaxSpeedMHz': _number(row['speed']),
-      'TotalCores': _number(row['cores']),
+      'TotalCores': _number(row['number_cores'] ?? row['cores']),
       'Status': _status(row),
       ..._rawScalars(row),
     };
@@ -137,10 +137,10 @@ Map<String, Object?> parseOldIlo2Inventory(
   final memory = _rows(resources, '/system1/memory', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
-      'Name': row['name'] ?? _leaf(path),
-      'DeviceLocator': _leaf(path),
+      'Name': _resourceName(row, _leaf(path)),
+      'DeviceLocator': row['location'] ?? _leaf(path),
       'CapacityMiB': _memoryMiB(row),
-      'OperatingSpeedMhz': _number(row['speed']),
+      'OperatingSpeedMhz': _number(row['frequency'] ?? row['speed']),
       'Status': _status(row),
       ..._rawScalars(row),
     };
@@ -148,9 +148,11 @@ Map<String, Object?> parseOldIlo2Inventory(
   final fans = _rows(resources, '/system1/fan', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
-      'Name': row['name'] ?? _leaf(path),
-      'Reading': _number(row['speed'] ?? row['reading']),
-      'ReadingUnits': row['units'],
+      'Name': _resourceName(row, _leaf(path)),
+      'Reading': _number(
+        row['desiredspeed'] ?? row['currentreading'] ?? row['reading'],
+      ),
+      'ReadingUnits': row['rateunits'] ?? row['units'],
       'Status': _status(row),
       ..._rawScalars(row),
     };
@@ -158,7 +160,7 @@ Map<String, Object?> parseOldIlo2Inventory(
   final temperatures = _rows(resources, '/system1/sensor', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
-      'Name': row['name'] ?? _leaf(path),
+      'Name': _resourceName(row, _leaf(path)),
       'ReadingCelsius': _number(
         row['currentreading'] ?? row['reading'] ?? row['value'],
       ),
@@ -169,7 +171,7 @@ Map<String, Object?> parseOldIlo2Inventory(
   final powerSupplies = _rows(resources, '/system1/powersupply', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
-      'Name': row['name'] ?? _leaf(path),
+      'Name': _resourceName(row, _leaf(path)),
       'Model': row['model'],
       'PowerCapacityWatts': _number(row['capacity'] ?? row['maxpower']),
       'Status': _status(row),
@@ -179,7 +181,7 @@ Map<String, Object?> parseOldIlo2Inventory(
   final firmwareRows = _rows(resources, '/system1/firmware', (path, row) {
     return <String, Object?>{
       'Id': _leaf(path),
-      'Name': row['name'] ?? 'System ROM',
+      'Name': _resourceName(row, 'System ROM'),
       'Version': row['version'],
       'ReleaseDate': row['date'],
       'Status': _status(row),
@@ -250,7 +252,7 @@ Map<String, Object?> parseOldIlo2Inventory(
     'powerControl': <Map<String, Object?>>[
       <String, Object?>{
         'Name': 'Server power',
-        'PowerConsumedWatts': _number(root['oemhp_PresentPower']),
+        'PowerConsumedWatts': _number(root['oemhp_presentpower']),
         'PowerState': _powerState(root['enabledstate']),
       },
     ],
@@ -263,7 +265,7 @@ Map<String, Object?> parseOldIlo2Inventory(
         '/system1/drives',
         (path, row) => <String, Object?>{
               'Id': _leaf(path),
-              'Name': row['name'] ?? _leaf(path),
+              'Name': _resourceName(row, _leaf(path)),
               'Status': _status(row),
               ..._rawScalars(row),
             }),
@@ -326,7 +328,7 @@ Map<String, Map<String, String>> _parseClpResources(String output) {
     if (section != 'properties' || path == null || trimmed.isEmpty) continue;
     final separator = trimmed.indexOf('=');
     if (separator > 0) {
-      lastKey = trimmed.substring(0, separator);
+      lastKey = trimmed.substring(0, separator).toLowerCase();
       result[path]![lastKey] = trimmed.substring(separator + 1).trim();
     } else if (lastKey != null) {
       result[path]![lastKey] = '${result[path]![lastKey]} $trimmed'.trim();
@@ -357,7 +359,9 @@ List<Map<String, Object?>> _rows(
   Map<String, Object?> Function(String path, Map<String, String> row) convert,
 ) =>
     resources.entries
-        .where((entry) => entry.key.startsWith(prefix))
+        .where(
+          (entry) => entry.key.startsWith(prefix) && !_notPresent(entry.value),
+        )
         .map((entry) => convert(entry.key, entry.value))
         .toList();
 
@@ -393,17 +397,55 @@ Map<String, Object?> _status(Map<String, String> row) {
   final lower = raw.toLowerCase();
   final health = lower == 'ok' || lower == 'normal' || lower == 'enabled'
       ? 'OK'
-      : lower.contains('critical') || lower.contains('error')
-          ? 'Critical'
-          : 'Warning';
+      : lower.contains('noncritical') ||
+              lower.contains('warning') ||
+              lower.contains('degraded')
+          ? 'Warning'
+          : lower.contains('critical') || lower.contains('error')
+              ? 'Critical'
+              : 'Warning';
   return <String, Object?>{
     'Health': health,
     'State': row['enabledstate'] ?? row['operationalstatus'] ?? raw,
   };
 }
 
+bool _notPresent(Map<String, String> row) {
+  final state =
+      (row['healthstate'] ?? row['operationalstatus'] ?? row['status'] ?? '')
+          .toLowerCase();
+  return state.contains('not installed') ||
+      state.contains('not present') ||
+      state == 'absent' ||
+      state == 'no reading' ||
+      row.values.any((value) {
+        final normalized = value.trim().toLowerCase();
+        return normalized == 'not installed' ||
+            normalized == 'not present' ||
+            normalized == 'absent';
+      });
+}
+
 Map<String, Object?> _rawScalars(Map<String, String> row) =>
     <String, Object?>{for (final entry in row.entries) entry.key: entry.value};
+
+String _resourceName(Map<String, String> row, String fallback) {
+  final name = row['name'];
+  if (name != null && name.isNotEmpty) return name;
+  final element = row['elementname'];
+  final device = row['deviceid'];
+  if (element != null &&
+      element.isNotEmpty &&
+      device != null &&
+      device.isNotEmpty) {
+    return '$element · $device';
+  }
+  return element?.isNotEmpty == true
+      ? element!
+      : device?.isNotEmpty == true
+          ? device!
+          : fallback;
+}
 
 int? _memoryMiB(Map<String, String> row) {
   final value = row['size'] ?? row['capacity'] ?? row['totalmemory'];

@@ -693,6 +693,11 @@ const List<_NavSection> _navSections = <_NavSection>[
     icon: Icons.hub_outlined,
     items: <_NavItem>[
       _NavItem(
+        path: '/notification-settings',
+        label: 'Уведомления',
+        icon: Icons.notifications_outlined,
+      ),
+      _NavItem(
         path: '/node-health',
         label: 'Node health',
         icon: Icons.hub_outlined,
@@ -815,6 +820,7 @@ String _selectedPath(String location) {
     '/hardware-health' => '/hardware-health',
     '/search' => '/search',
     '/collection-metrics' => '/collection-metrics',
+    '/notification-settings' => '/notification-settings',
     '/users' => '/users',
     '/audit' => '/audit',
     _ => '/',
@@ -838,6 +844,7 @@ String _titleForLocation(String location) {
     '/hardware-health' => 'Hardware health',
     '/search' => 'Поиск',
     '/collection-metrics' => 'Collection metrics',
+    '/notification-settings' => 'Уведомления',
     '/sources' => 'Источники',
     '/users' => 'Пользователи',
     '/audit' => 'Аудит',
