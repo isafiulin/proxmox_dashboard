@@ -8,6 +8,7 @@ import 'package:neotelecom_backend/features/collection/data_snapshot.dart';
 import 'package:neotelecom_backend/features/integrations/infrastructure_read_service.dart';
 import 'package:neotelecom_backend/features/notifications/notification_service.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
+import 'package:neotelecom_backend/features/settings/error_filter.dart';
 
 const snapshotRetention = Duration(days: 7);
 
@@ -209,7 +210,11 @@ class CollectionService {
         .firstOrNull;
     late final DataSnapshot snapshot;
     try {
-      final payload = await _payloadFor(source);
+      final payload = (filterIgnoredErrors(
+        await _payloadFor(source),
+        _store.settings.ignoredErrorPatterns,
+      ) as Map)
+          .cast<String, Object?>();
       payload['collectionDurationMs'] = stopwatch.elapsedMilliseconds;
       snapshot = DataSnapshot.create(
         sourceId: source.id,

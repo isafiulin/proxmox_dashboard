@@ -16,6 +16,7 @@ import 'features/integrations/ipmi_client.dart';
 import 'features/notifications/notification_service.dart';
 import 'features/notifications/telegram_bot_client.dart';
 import 'features/settings/settings_service.dart';
+import 'features/settings/error_filter.dart';
 import 'features/sources/source_connection_tester.dart';
 import 'features/sources/sources_service.dart';
 import 'features/users/user.dart';
@@ -298,6 +299,11 @@ class App {
             current.telegramMinimumSeverity,
         telegramNotifyRecovery: body['telegramNotifyRecovery'] as bool? ??
             current.telegramNotifyRecovery,
+        ignoredErrorPatterns: body['ignoredErrorPatterns'] is List
+            ? (body['ignoredErrorPatterns'] as List)
+                .map((value) => value.toString())
+                .toList()
+            : current.ignoredErrorPatterns,
         telegramBotToken: body['telegramBotToken']?.toString(),
         clearTelegramBotToken: body['clearTelegramBotToken'] as bool? ?? false,
       );
@@ -423,10 +429,14 @@ class App {
     if (method == 'GET' && path == '/api/data-snapshots') {
       final String? sourceId = request.uri.queryParameters['sourceId'];
       return sendJson(request, {
-        'items': collection
-            .latest(sourceId: sourceId)
-            .map((snapshot) => snapshot.toJson())
-            .toList(),
+        'items': collection.latest(sourceId: sourceId).map((snapshot) {
+          final json = snapshot.toJson();
+          json['payload'] = filterIgnoredErrors(
+            snapshot.payload,
+            settings.current.ignoredErrorPatterns,
+          );
+          return json;
+        }).toList(),
       });
     }
 
@@ -458,7 +468,13 @@ class App {
         'tasks' => await infrastructure.proxmoxVeTasks(sourceId),
         _ => null,
       };
-      return sendJson(request, {'data': data});
+      return sendJson(request, {
+        'data': filterIgnoredErrors(
+          data,
+          settings.current.ignoredErrorPatterns,
+          rootListContainsErrors: dataType == 'tasks',
+        ),
+      });
     }
 
     final veNodeInfoRoute = RegExp(
@@ -518,7 +534,13 @@ class App {
         'health' => await infrastructure.proxmoxBackupHealth(sourceId),
         _ => null,
       };
-      return sendJson(request, {'data': data});
+      return sendJson(request, {
+        'data': filterIgnoredErrors(
+          data,
+          settings.current.ignoredErrorPatterns,
+          rootListContainsErrors: dataType == 'tasks',
+        ),
+      });
     }
 
     final pbsSnapshotsRoute = RegExp(

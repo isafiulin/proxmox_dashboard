@@ -132,8 +132,17 @@ Docker Compose использует `STORE_DRIVER=postgres`.
 Текущие настройки:
 
 - `collectionIntervalMinutes`: как часто backend собирает snapshots с источников.
+- `telegramEnabled`: включена ли доставка аварий в Telegram;
+- `telegramChatId`: получатель Telegram;
+- `telegramMinimumSeverity`: `warning` или `critical`;
+- `telegramNotifyRecovery`: отправлять ли восстановление;
+- `ignoredErrorPatterns`: регистронезависимые текстовые фрагменты шумных
+  ошибок, исключаемых из dashboard, snapshots и Telegram.
 
 По умолчанию используется 30 минут. Допустимый диапазон MVP: 5-1440 минут.
+Telegram bot token хранится зашифрованно и никогда не возвращается frontend.
+Фильтр ошибок допускает до 100 строк длиной до 200 символов; по умолчанию
+игнорируется `aptupdate`.
 
 ### Data snapshot
 
@@ -386,8 +395,10 @@ docker compose
   frontend container
   backend container
   postgres container
-  reverse proxy container
 ```
+
+Контейнер frontend уже содержит Nginx: он раздаёт Flutter Web и проксирует
+`/api/` в backend. Публичный HTTPS завершается внешним reverse proxy/LB.
 
 Внешне:
 

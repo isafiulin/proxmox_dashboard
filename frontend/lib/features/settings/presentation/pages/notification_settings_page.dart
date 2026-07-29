@@ -21,6 +21,7 @@ class NotificationSettingsPage extends StatefulWidget {
 class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   final _chatIdController = TextEditingController();
   final _tokenController = TextEditingController();
+  final _ignoredErrorsController = TextEditingController();
   bool _initialized = false;
   bool _enabled = false;
   bool _hasStoredToken = false;
@@ -34,6 +35,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   void dispose() {
     _chatIdController.dispose();
     _tokenController.dispose();
+    _ignoredErrorsController.dispose();
     super.dispose();
   }
 
@@ -47,6 +49,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     _chatIdController.text = settings.telegramChatId;
     _minimumSeverity = settings.telegramMinimumSeverity;
     _notifyRecovery = settings.telegramNotifyRecovery;
+    _ignoredErrorsController.text = settings.ignoredErrorPatterns.join('\n');
   }
 
   @override
@@ -211,6 +214,19 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
             onChanged: (value) => setState(() => _notifyRecovery = value),
           ),
           const Divider(),
+          TextField(
+            controller: _ignoredErrorsController,
+            minLines: 3,
+            maxLines: 8,
+            decoration: const InputDecoration(
+              labelText: 'Игнорировать ошибки, содержащие текст',
+              helperText:
+                  'По одному фрагменту на строку. Регистр не учитывается. Совпавшие события не попадут в дашборд, историю и Telegram.',
+              prefixIcon: Icon(Icons.filter_alt_outlined),
+              alignLabelWithHint: true,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           const ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.filter_alt_outlined),
@@ -272,6 +288,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
         notifyRecovery: _notifyRecovery,
         botToken: token,
         clearBotToken: _clearToken,
+        ignoredErrorPatterns: _ignoredErrorsController.text
+            .split('\n')
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(),
       );
       final saved = cubit.state.settings;
       if (!mounted) {

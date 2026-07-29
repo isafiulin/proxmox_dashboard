@@ -30,6 +30,7 @@ class SettingsRepository {
     required bool notifyRecovery,
     String botToken = '',
     bool clearBotToken = false,
+    required List<String> ignoredErrorPatterns,
   }) async {
     final json = await _api.patch(
       '/settings',
@@ -40,6 +41,7 @@ class SettingsRepository {
         'telegramNotifyRecovery': notifyRecovery,
         if (botToken.isNotEmpty) 'telegramBotToken': botToken,
         if (clearBotToken) 'clearTelegramBotToken': true,
+        'ignoredErrorPatterns': ignoredErrorPatterns,
       },
     );
     return SystemSettings.fromJson(

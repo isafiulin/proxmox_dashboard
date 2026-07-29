@@ -7,6 +7,7 @@ import 'package:neotelecom_backend/core/store/app_store.dart';
 import 'package:neotelecom_backend/features/collection/data_snapshot.dart';
 import 'package:neotelecom_backend/features/notifications/telegram_bot_client.dart';
 import 'package:neotelecom_backend/features/sources/source.dart';
+import 'package:neotelecom_backend/features/settings/error_filter.dart';
 
 class NotificationService {
   NotificationService(
@@ -55,6 +56,7 @@ class NotificationService {
       minimumSeverity: settings.telegramMinimumSeverity,
       backupSnapshots: _latestBackupSnapshots(_store),
       backupNamespace: source.backupNamespace,
+      ignoredErrorPatterns: settings.ignoredErrorPatterns,
     );
     if (change.started.isEmpty &&
         (!settings.telegramNotifyRecovery || change.resolved.isEmpty)) {
@@ -142,6 +144,7 @@ IncidentChange incidentChange(
   List<Map<String, Object?>> backupSnapshots = const <Map<String, Object?>>[],
   String backupNamespace = '',
   DateTime? now,
+  List<String> ignoredErrorPatterns = const <String>[],
 }) {
   final before = <String, Incident>{
     for (final incident in _incidents(
@@ -150,6 +153,7 @@ IncidentChange incidentChange(
       backupSnapshots: backupSnapshots,
       backupNamespace: backupNamespace,
       now: now,
+      ignoredErrorPatterns: ignoredErrorPatterns,
     ))
       incident.key: incident,
   };
@@ -160,6 +164,7 @@ IncidentChange incidentChange(
       backupSnapshots: backupSnapshots,
       backupNamespace: backupNamespace,
       now: now,
+      ignoredErrorPatterns: ignoredErrorPatterns,
     ))
       incident.key: incident,
   };
@@ -295,9 +300,13 @@ List<Incident> _incidents(
   required List<Map<String, Object?>> backupSnapshots,
   required String backupNamespace,
   required DateTime? now,
+  required List<String> ignoredErrorPatterns,
 }) {
   if (snapshot == null) return const <Incident>[];
   if (snapshot.status != 'ok') {
+    if (matchesIgnoredError(snapshot.payload, ignoredErrorPatterns)) {
+      return const <Incident>[];
+    }
     return const <Incident>[
       Incident(
         key: 'collection',
@@ -307,7 +316,12 @@ List<Incident> _incidents(
     ];
   }
   final incidents = <Incident>[];
-  final rows = snapshot.payload['healthIssues'];
+  final payload = (filterIgnoredErrors(
+    snapshot.payload,
+    ignoredErrorPatterns,
+  ) as Map)
+      .cast<String, Object?>();
+  final rows = payload['healthIssues'];
   if (rows is List) {
     incidents.addAll(rows.whereType<Map>().map((row) {
       final severity = _normalizedSeverity(row['health']?.toString());
@@ -323,13 +337,30 @@ List<Incident> _incidents(
   }
   if (snapshot.sourceType == 'proxmox_ve') {
     incidents.addAll(_proxmoxVeIncidents(
-      snapshot,
+      DataSnapshot(
+        id: snapshot.id,
+        sourceId: snapshot.sourceId,
+        sourceType: snapshot.sourceType,
+        status: snapshot.status,
+        payload: payload,
+        collectedAt: snapshot.collectedAt,
+      ),
       backupSnapshots: backupSnapshots,
       backupNamespace: backupNamespace,
       now: now,
     ));
   } else if (snapshot.sourceType == 'proxmox_backup') {
-    incidents.addAll(_proxmoxBackupIncidents(snapshot, now: now));
+    incidents.addAll(_proxmoxBackupIncidents(
+      DataSnapshot(
+        id: snapshot.id,
+        sourceId: snapshot.sourceId,
+        sourceType: snapshot.sourceType,
+        status: snapshot.status,
+        payload: payload,
+        collectedAt: snapshot.collectedAt,
+      ),
+      now: now,
+    ));
   }
   final minimum = _severityRank(minimumSeverity);
   return incidents

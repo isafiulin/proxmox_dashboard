@@ -8,6 +8,7 @@ class SystemSettings extends Equatable {
     required this.telegramChatId,
     required this.telegramMinimumSeverity,
     required this.telegramNotifyRecovery,
+    required this.ignoredErrorPatterns,
   });
 
   factory SystemSettings.defaults() => const SystemSettings(
@@ -17,6 +18,7 @@ class SystemSettings extends Equatable {
     telegramChatId: '',
     telegramMinimumSeverity: 'warning',
     telegramNotifyRecovery: true,
+    ignoredErrorPatterns: <String>['aptupdate'],
   );
 
   factory SystemSettings.fromJson(Map<String, Object?> json) {
@@ -29,6 +31,11 @@ class SystemSettings extends Equatable {
       telegramMinimumSeverity:
           json['telegramMinimumSeverity']?.toString() ?? 'warning',
       telegramNotifyRecovery: json['telegramNotifyRecovery'] as bool? ?? true,
+      ignoredErrorPatterns:
+          (json['ignoredErrorPatterns'] as List?)
+              ?.map((value) => value.toString())
+              .toList(growable: false) ??
+          const <String>['aptupdate'],
     );
   }
 
@@ -38,6 +45,7 @@ class SystemSettings extends Equatable {
   final String telegramChatId;
   final String telegramMinimumSeverity;
   final bool telegramNotifyRecovery;
+  final List<String> ignoredErrorPatterns;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'collectionIntervalMinutes': collectionIntervalMinutes,
@@ -46,6 +54,7 @@ class SystemSettings extends Equatable {
     'telegramChatId': telegramChatId,
     'telegramMinimumSeverity': telegramMinimumSeverity,
     'telegramNotifyRecovery': telegramNotifyRecovery,
+    'ignoredErrorPatterns': ignoredErrorPatterns,
   };
 
   @override
@@ -56,5 +65,6 @@ class SystemSettings extends Equatable {
     telegramChatId,
     telegramMinimumSeverity,
     telegramNotifyRecovery,
+    ignoredErrorPatterns,
   ];
 }

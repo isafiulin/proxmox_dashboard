@@ -2,6 +2,7 @@ import 'package:neotelecom_backend/core/security/credentials_cipher.dart';
 import 'package:neotelecom_backend/core/store/app_store.dart';
 import 'package:neotelecom_backend/features/audit/audit_service.dart';
 import 'package:neotelecom_backend/features/settings/system_settings.dart';
+import 'package:neotelecom_backend/features/settings/error_filter.dart';
 
 class SettingsService {
   SettingsService(this._store, this._audit, this._credentialsCipher);
@@ -19,11 +20,17 @@ class SettingsService {
     required String telegramChatId,
     required String telegramMinimumSeverity,
     required bool telegramNotifyRecovery,
+    required List<String> ignoredErrorPatterns,
     String? telegramBotToken,
     bool clearTelegramBotToken = false,
   }) async {
     if (collectionIntervalMinutes < 5 || collectionIntervalMinutes > 1440) {
       throw const SettingsInputException('invalid_settings_payload');
+    }
+    final patterns = normalizeIgnoredErrorPatterns(ignoredErrorPatterns);
+    if (patterns.length > 100 ||
+        patterns.any((pattern) => pattern.length > 200)) {
+      throw const SettingsInputException('invalid_error_filters');
     }
 
     final chatId = telegramChatId.trim();
@@ -53,6 +60,7 @@ class SettingsService {
     _store.settings.telegramChatId = chatId;
     _store.settings.telegramMinimumSeverity = telegramMinimumSeverity;
     _store.settings.telegramNotifyRecovery = telegramNotifyRecovery;
+    _store.settings.ignoredErrorPatterns = patterns;
     _audit.record(
       'settings.update',
       actorUserId: actorUserId,
@@ -63,6 +71,7 @@ class SettingsService {
         'telegramChatId': chatId,
         'telegramMinimumSeverity': telegramMinimumSeverity,
         'telegramNotifyRecovery': telegramNotifyRecovery,
+        'ignoredErrorPatterns': patterns,
         'telegramBotTokenChanged': token.isNotEmpty || clearTelegramBotToken,
       },
     );

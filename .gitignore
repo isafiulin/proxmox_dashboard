@@ -1,6 +1,7 @@
 .DS_Store
 .env
 deploy/.env
+tbot/
 
 # Dart / Flutter
 .dart_tool/

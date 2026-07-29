@@ -126,6 +126,7 @@ void main() {
         'telegramChatId': '-1001234567890',
         'telegramMinimumSeverity': 'critical',
         'telegramNotifyRecovery': true,
+        'ignoredErrorPatterns': <String>['aptupdate', 'known noisy task'],
       },
     );
     expect(settingsResponse.statusCode, HttpStatus.ok);
@@ -138,6 +139,10 @@ void main() {
     expect(settings['hasTelegramBotToken'], isTrue);
     expect(settings['telegramChatId'], '-1001234567890');
     expect(settings['telegramMinimumSeverity'], 'critical');
+    expect(
+      settings['ignoredErrorPatterns'],
+      <String>['aptupdate', 'known noisy task'],
+    );
     expect(settings, isNot(contains('telegramBotTokenCiphertext')));
     expect(settings.toString(), isNot(contains('abcdefghijklmnopqrstuvwx')));
 

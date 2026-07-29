@@ -40,6 +40,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     required bool notifyRecovery,
     String botToken = '',
     bool clearBotToken = false,
+    required List<String> ignoredErrorPatterns,
   }) async {
     emit(state.copyWith(status: SettingsStatus.loading));
     try {
@@ -53,6 +54,7 @@ class SettingsCubit extends Cubit<SettingsState> {
             notifyRecovery: notifyRecovery,
             botToken: botToken,
             clearBotToken: clearBotToken,
+            ignoredErrorPatterns: ignoredErrorPatterns,
           ),
         ),
       );
