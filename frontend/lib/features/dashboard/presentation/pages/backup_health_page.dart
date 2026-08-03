@@ -4,6 +4,7 @@ import 'package:frontend/core/api/api_client.dart';
 import 'package:frontend/core/design/app_colors.dart';
 import 'package:frontend/features/sources/data/source_data_repository.dart';
 import 'package:frontend/features/sources/domain/backup_analysis.dart';
+import 'package:frontend/features/sources/domain/pbs_health.dart';
 import 'package:frontend/features/sources/domain/source.dart';
 import 'package:frontend/features/sources/presentation/cubit/sources_cubit.dart';
 import 'package:frontend/shared/widgets/app_card.dart';
@@ -65,6 +66,7 @@ class BackupHealthPage extends StatelessWidget {
       snapshots.addAll(
         data.snapshots.map(
           (snapshot) => <String, Object?>{
+            'backupSourceId': source.id,
             'backupSource': source.name,
             ...snapshot,
           },
@@ -74,6 +76,7 @@ class BackupHealthPage extends StatelessWidget {
 
     final guests = <_GuestBackupIssue>[];
     final allGuests = <Map<String, Object?>>[];
+    final now = DateTime.now().toUtc();
     var totalGuests = 0;
     for (final source in veSources) {
       final data = await repository.loadProxmoxVe(source.id);
@@ -102,9 +105,22 @@ class BackupHealthPage extends StatelessWidget {
           guestName: guest['name']?.toString() ?? '',
           backupNamespaces: effectiveBackupNamespaces,
           snapshots: snapshots,
+          now: now,
         );
-        if (summary.status == BackupAgeStatus.ok ||
-            summary.status == BackupAgeStatus.warning) {
+        final locationFreshness = analyzePbsBackupLocationFreshness(
+          summary.matches,
+        );
+        final backupLocationLabels = locationFreshness.latestByLocation.values
+            .map(
+              (snapshot) =>
+                  '${_backupLocationLabel(snapshot)}: '
+                  '${_formatDateTime(snapshotTime(snapshot))}',
+            )
+            .where((location) => location.isNotEmpty)
+            .toSet();
+        if ((summary.status == BackupAgeStatus.ok ||
+                summary.status == BackupAgeStatus.warning) &&
+            locationFreshness.currentLocationCount >= 2) {
           continue;
         }
         guests.add(
@@ -117,6 +133,16 @@ class BackupHealthPage extends StatelessWidget {
             name: guest['name']?.toString() ?? '',
             guestStatus: guest['status']?.toString() ?? 'unknown',
             status: summary.status,
+            problem: backupProblemDescription(
+              summary,
+              currentBackupLocationCount:
+                  locationFreshness.currentLocationCount,
+              totalBackupLocationCount:
+                  locationFreshness.latestByLocation.length,
+              now: now,
+            ),
+            backupLocationCount: locationFreshness.currentLocationCount,
+            backupLocations: backupLocationLabels,
             latestBackupAt: summary.latestBackupAt,
           ),
         );
@@ -160,6 +186,9 @@ class _BackupHealthContent extends StatelessWidget {
         .where((issue) => issue.status == BackupAgeStatus.critical)
         .length;
     final namespaceGaps = report.namespaceGaps.length;
+    final insufficientLocations = report.issues
+        .where((issue) => issue.backupLocationCount < 2)
+        .length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,6 +221,14 @@ class _BackupHealthContent extends StatelessWidget {
               value: critical.toString(),
               icon: Icons.schedule_outlined,
               color: critical == 0 ? AppColors.success : AppColors.danger,
+            ),
+            MetricCard(
+              label: 'Меньше 2 мест',
+              value: insufficientLocations.toString(),
+              icon: Icons.copy_all_outlined,
+              color: insufficientLocations == 0
+                  ? AppColors.success
+                  : AppColors.warning,
             ),
             MetricCard(
               label: 'Root без namespace',
@@ -230,13 +267,23 @@ class _BackupHealthContent extends StatelessWidget {
                   scrollDirection: Axis.horizontal,
                   child: SortableDataTable<_GuestBackupIssue>(
                     showCheckboxColumn: false,
-                    initialSortColumnIndex: 6,
+                    initialSortColumnIndex: 8,
                     items: report.issues,
                     columns: <SortableDataColumn<_GuestBackupIssue>>[
                       SortableDataColumn<_GuestBackupIssue>(
                         label: 'status',
                         compare: (left, right) =>
                             compareText(left.statusLabel, right.statusLabel),
+                      ),
+                      SortableDataColumn<_GuestBackupIssue>(
+                        label: 'проблема',
+                        compare: (left, right) =>
+                            compareText(left.problem, right.problem),
+                      ),
+                      SortableDataColumn<_GuestBackupIssue>(
+                        label: 'места backup',
+                        compare: (left, right) => left.backupLocationCount
+                            .compareTo(right.backupLocationCount),
                       ),
                       SortableDataColumn<_GuestBackupIssue>(
                         label: 'source',
@@ -288,6 +335,13 @@ class _BackupHealthContent extends StatelessWidget {
                         },
                         cells: <DataCell>[
                           DataCell(StatusChip(status: issue.statusLabel)),
+                          DataCell(Text(issue.problem)),
+                          DataCell(
+                            Text(
+                              'актуально ${issue.backupLocationCount} из 2'
+                              '${issue.backupLocations.isEmpty ? '' : ' — ${issue.backupLocations.join(', ')}'}',
+                            ),
+                          ),
                           DataCell(Text(issue.sourceName)),
                           DataCell(Text(issue.node)),
                           DataCell(Text('${issue.guestType}/${issue.vmid}')),
@@ -322,7 +376,9 @@ class _BackupStatusInfoCard extends StatelessWidget {
             child: Text(
               'Backup status: ok — backup за последние 24 часа; '
               'warning — backup от 1 до 7 дней; critical — backup старше '
-              '7 дней; missing — snapshots для VM/LXC не найдены.',
+              '7 дней; missing — snapshots для VM/LXC не найдены. Для '
+              'отказоустойчивости требуется минимум 2 места хранения с '
+              'backup за одну и ту же дату.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: AppColors.mutedInk),
@@ -477,6 +533,9 @@ class _GuestBackupIssue {
     required this.name,
     required this.guestStatus,
     required this.status,
+    required this.problem,
+    required this.backupLocationCount,
+    required this.backupLocations,
     required this.latestBackupAt,
   });
 
@@ -488,13 +547,28 @@ class _GuestBackupIssue {
   final String name;
   final String guestStatus;
   final BackupAgeStatus status;
+  final String problem;
+  final int backupLocationCount;
+  final Set<String> backupLocations;
   final DateTime? latestBackupAt;
 
-  String get statusLabel => backupStatusLabel(status);
+  String get statusLabel =>
+      backupLocationCount < 2 &&
+          (status == BackupAgeStatus.ok || status == BackupAgeStatus.warning)
+      ? 'warning'
+      : backupStatusLabel(status);
 }
 
 bool _isGuest(Map<String, Object?> item) {
   return item['type'] == 'qemu' || item['type'] == 'lxc';
+}
+
+String _backupLocationLabel(Map<String, Object?> snapshot) {
+  final source = snapshot['backupSource']?.toString() ?? '';
+  final datastore = snapshot['datastore']?.toString() ?? '';
+  final namespace = snapshotNamespace(snapshot);
+  final base = datastore.isEmpty ? source : '$source / $datastore';
+  return namespace.isEmpty ? base : '$base / $namespace';
 }
 
 String _formatDateTime(DateTime? value) {

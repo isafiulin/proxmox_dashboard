@@ -75,6 +75,7 @@ void main() {
 
     expect(message, contains('BMC &amp; rack'));
     expect(message, contains('Temp &lt;CPU&gt;'));
+    expect(message, contains('Время: 29.07.2026 02:15'));
     expect(message, contains('… и ещё 2'));
     expect(message, isNot(contains('Sensor 6')));
   });

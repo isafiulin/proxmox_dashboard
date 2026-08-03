@@ -876,6 +876,33 @@ String backupStatusDescription(BackupAgeStatus status) {
   };
 }
 
+String backupProblemDescription(
+  GuestBackupSummary summary, {
+  int? currentBackupLocationCount,
+  int? totalBackupLocationCount,
+  DateTime? now,
+}) {
+  final problems = <String>[];
+  if (summary.matchQuality == BackupMatchQuality.nameMismatch) {
+    problems.add('Имя VM/LXC в backup не совпадает');
+  } else if (summary.latestBackupAt == null) {
+    problems.add('Backup не найден');
+  } else if (summary.status == BackupAgeStatus.critical) {
+    final age = (now ?? DateTime.now().toUtc()).difference(
+      summary.latestBackupAt!,
+    );
+    problems.add('Последний backup ${age.inDays} дн. назад');
+  }
+  if (currentBackupLocationCount == 1) {
+    problems.add(
+      (totalBackupLocationCount ?? 0) >= 2
+          ? 'Вторая копия устарела'
+          : 'Только 1 место из 2',
+    );
+  }
+  return problems.join('; ');
+}
+
 String backupMatchDescription(BackupMatchQuality quality) {
   return switch (quality) {
     BackupMatchQuality.nameConfirmed =>

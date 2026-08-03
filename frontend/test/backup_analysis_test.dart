@@ -41,6 +41,83 @@ void main() {
     );
 
     expect(summary.status, BackupAgeStatus.missing);
+    expect(backupProblemDescription(summary), 'Backup не найден');
+  });
+
+  test('describes the exact age of a stale guest backup', () {
+    final now = DateTime.utc(2026, 8, 3, 12);
+    final summary = analyzeGuestBackups(
+      guestType: 'qemu',
+      vmid: '109',
+      now: now,
+      snapshots: <Map<String, Object?>>[
+        <String, Object?>{
+          'backup-type': 'vm',
+          'backup-id': '109',
+          'backup-time': now
+              .subtract(const Duration(days: 20, hours: 2))
+              .secondsSinceEpoch,
+        },
+      ],
+    );
+
+    expect(summary.status, BackupAgeStatus.critical);
+    expect(
+      backupProblemDescription(
+        summary,
+        currentBackupLocationCount: 1,
+        totalBackupLocationCount: 1,
+        now: now,
+      ),
+      'Последний backup 20 дн. назад; Только 1 место из 2',
+    );
+  });
+
+  test('reports insufficient locations for a fresh backup', () {
+    final now = DateTime.utc(2026, 8, 3, 12);
+    final summary = analyzeGuestBackups(
+      guestType: 'qemu',
+      vmid: '109',
+      now: now,
+      snapshots: <Map<String, Object?>>[
+        <String, Object?>{
+          'backup-type': 'vm',
+          'backup-id': '109',
+          'backup-time': now
+              .subtract(const Duration(hours: 2))
+              .secondsSinceEpoch,
+        },
+      ],
+    );
+
+    expect(summary.status, BackupAgeStatus.ok);
+    expect(
+      backupProblemDescription(
+        summary,
+        currentBackupLocationCount: 1,
+        totalBackupLocationCount: 1,
+        now: now,
+      ),
+      'Только 1 место из 2',
+    );
+  });
+
+  test('reports a stale second backup copy', () {
+    final summary = GuestBackupSummary(
+      matches: const <Map<String, Object?>>[],
+      status: BackupAgeStatus.ok,
+      latestBackupAt: DateTime.utc(2026, 8, 3),
+    );
+
+    expect(
+      backupProblemDescription(
+        summary,
+        currentBackupLocationCount: 1,
+        totalBackupLocationCount: 2,
+        now: DateTime.utc(2026, 8, 3),
+      ),
+      'Вторая копия устарела',
+    );
   });
 
   test('confirms backup by PBS notes when VM ids can collide', () {
@@ -99,6 +176,10 @@ void main() {
 
       expect(summary.status, BackupAgeStatus.missing);
       expect(summary.matchQuality, BackupMatchQuality.nameMismatch);
+      expect(
+        backupProblemDescription(summary),
+        'Имя VM/LXC в backup не совпадает',
+      );
       expect(summary.latestBackupAt, isNull);
       expect(summary.nameMismatchSnapshots, hasLength(1));
       expect(

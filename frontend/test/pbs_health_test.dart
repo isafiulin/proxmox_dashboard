@@ -22,6 +22,50 @@ void main() {
     expect(<String>{first, secondDatastore, secondNamespace}, hasLength(3));
   });
 
+  test('only locations with the newest backup date are current', () {
+    final current = DateTime.utc(2026, 8, 3, 1);
+    final freshness = analyzePbsBackupLocationFreshness(<Map<String, Object?>>[
+      <String, Object?>{
+        'backupSourceId': 'pbs-1',
+        'datastore': 'main',
+        'backup-time': current.millisecondsSinceEpoch ~/ 1000,
+      },
+      <String, Object?>{
+        'backupSourceId': 'pbs-2',
+        'datastore': 'reserve',
+        'backup-time':
+            current.subtract(const Duration(days: 1)).millisecondsSinceEpoch ~/
+            1000,
+      },
+    ]);
+
+    expect(freshness.latestByLocation, hasLength(2));
+    expect(freshness.currentLocationCount, 1);
+    expect(freshness.latestBackupAt, current);
+  });
+
+  test('two locations on the same backup date are current', () {
+    final current = DateTime.utc(2026, 8, 3, 16);
+    final freshness = analyzePbsBackupLocationFreshness(<Map<String, Object?>>[
+      <String, Object?>{
+        'backupSourceId': 'pbs-1',
+        'datastore': 'main',
+        'backup-time': current.millisecondsSinceEpoch ~/ 1000,
+      },
+      <String, Object?>{
+        'backupSourceId': 'pbs-2',
+        'datastore': 'reserve',
+        'backup-time':
+            current
+                .subtract(const Duration(hours: 12))
+                .millisecondsSinceEpoch ~/
+            1000,
+      },
+    ]);
+
+    expect(freshness.currentLocationCount, 2);
+  });
+
   test('verify state reads PBS verification object and failure reason', () {
     final items = buildPbsVerifyItems(<Map<String, Object?>>[
       <String, Object?>{

@@ -118,6 +118,60 @@ String pbsBackupLocation(Map<String, Object?> snapshot) {
   return '$source\u0001$datastore\u0001$namespace';
 }
 
+class PbsBackupLocationFreshness {
+  const PbsBackupLocationFreshness({required this.latestByLocation});
+
+  final Map<String, Map<String, Object?>> latestByLocation;
+
+  DateTime? get latestBackupAt {
+    if (latestByLocation.isEmpty) {
+      return null;
+    }
+    return latestByLocation.values
+        .map(_pbsSnapshotTime)
+        .reduce((left, right) => left.isAfter(right) ? left : right);
+  }
+
+  int get currentLocationCount {
+    final latest = latestBackupAt;
+    if (latest == null) {
+      return 0;
+    }
+    return latestByLocation.values
+        .where((snapshot) => _sameUtc6Date(_pbsSnapshotTime(snapshot), latest))
+        .length;
+  }
+}
+
+PbsBackupLocationFreshness analyzePbsBackupLocationFreshness(
+  Iterable<Map<String, Object?>> snapshots,
+) {
+  final latestByLocation = <String, Map<String, Object?>>{};
+  for (final snapshot in snapshots) {
+    final location = pbsBackupLocation(snapshot);
+    if (location.replaceAll('\u0001', '').isEmpty) {
+      continue;
+    }
+    final previous = latestByLocation[location];
+    if (previous == null ||
+        _pbsSnapshotTime(snapshot).isAfter(_pbsSnapshotTime(previous))) {
+      latestByLocation[location] = snapshot;
+    }
+  }
+  return PbsBackupLocationFreshness(latestByLocation: latestByLocation);
+}
+
+DateTime _pbsSnapshotTime(Map<String, Object?> snapshot) {
+  final seconds = int.tryParse(snapshot['backup-time']?.toString() ?? '') ?? 0;
+  return DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
+}
+
+bool _sameUtc6Date(DateTime left, DateTime right) {
+  final a = left.toUtc().add(const Duration(hours: 6));
+  final b = right.toUtc().add(const Duration(hours: 6));
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
 String _normalizeVerifyState(String value) {
   final state = value.trim().toLowerCase();
   if (state == 'ok' || state == 'verified') {

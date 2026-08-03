@@ -98,21 +98,22 @@ class BackupRedundancyPage extends StatelessWidget {
         totalGuests += 1;
         final guestType = guest['type']?.toString() ?? '';
         final vmid = guest['vmid']?.toString() ?? '';
-        final expectedBackupType = guestType == 'lxc' ? 'ct' : 'vm';
-        final guestSnapshots = snapshots.where((snapshot) {
-          return snapshot['backup-type']?.toString() == expectedBackupType &&
-              snapshot['backup-id']?.toString() == vmid &&
-              effectiveNamespaces.contains(snapshotNamespace(snapshot));
-        }).toList();
+        final summary = analyzeGuestBackups(
+          guestType: guestType,
+          vmid: vmid,
+          guestName: guest['name']?.toString() ?? '',
+          backupNamespaces: effectiveNamespaces,
+          snapshots: snapshots,
+        );
+        final guestSnapshots = summary.matches;
         final backupSources = guestSnapshots
             .map((snapshot) => snapshot['backupSource']?.toString() ?? '')
             .where((sourceName) => sourceName.isNotEmpty)
             .toSet();
-        final backupLocations = guestSnapshots
-            .map(pbsBackupLocation)
-            .where((location) => location.replaceAll('\u0001', '').isNotEmpty)
-            .toSet();
-        final backupLocationLabels = guestSnapshots
+        final locationFreshness = analyzePbsBackupLocationFreshness(
+          guestSnapshots,
+        );
+        final backupLocationLabels = locationFreshness.latestByLocation.values
             .map((snapshot) {
               final sourceName = snapshot['backupSource']?.toString() ?? '';
               final datastore = snapshot['datastore']?.toString() ?? '';
@@ -123,20 +124,14 @@ class BackupRedundancyPage extends StatelessWidget {
               final base = datastore.isEmpty
                   ? sourceName
                   : '$sourceName / $datastore';
-              return namespace.isEmpty ? base : '$base / $namespace';
+              final label = namespace.isEmpty ? base : '$base / $namespace';
+              return '$label: ${_formatDateTime(snapshotTime(snapshot))}';
             })
             .where((location) => location.isNotEmpty)
             .toSet();
-        if (backupLocations.length >= 2) {
+        if (locationFreshness.currentLocationCount >= 2) {
           continue;
         }
-        final summary = analyzeGuestBackups(
-          guestType: guestType,
-          vmid: vmid,
-          guestName: guest['name']?.toString() ?? '',
-          backupNamespaces: effectiveNamespaces,
-          snapshots: snapshots,
-        );
         issues.add(
           _BackupRedundancyIssue(
             sourceId: source.id,
@@ -147,6 +142,7 @@ class BackupRedundancyPage extends StatelessWidget {
             name: guest['name']?.toString() ?? '',
             guestStatus: guest['status']?.toString() ?? 'unknown',
             backupSources: backupSources,
+            currentLocationCount: locationFreshness.currentLocationCount,
             backupLocations: backupLocationLabels,
             snapshotCount: guestSnapshots.length,
             latestBackupAt: summary.latestBackupAt,
@@ -156,8 +152,8 @@ class BackupRedundancyPage extends StatelessWidget {
     }
 
     issues.sort((a, b) {
-      final sourceCompare = a.backupLocations.length.compareTo(
-        b.backupLocations.length,
+      final sourceCompare = a.currentLocationCount.compareTo(
+        b.currentLocationCount,
       );
       if (sourceCompare != 0) {
         return sourceCompare;
@@ -183,10 +179,10 @@ class _BackupRedundancyContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final missing = report.issues
-        .where((issue) => issue.backupLocations.isEmpty)
+        .where((issue) => issue.currentLocationCount == 0)
         .length;
     final singleServer = report.issues
-        .where((issue) => issue.backupLocations.length == 1)
+        .where((issue) => issue.currentLocationCount == 1)
         .length;
 
     return Column(
@@ -217,7 +213,7 @@ class _BackupRedundancyContent extends StatelessWidget {
               color: missing == 0 ? AppColors.success : AppColors.danger,
             ),
             MetricCard(
-              label: 'Только 1 location',
+              label: 'Только 1 актуальное',
               value: singleServer.toString(),
               icon: Icons.warning_amber_outlined,
               color: singleServer == 0 ? AppColors.success : AppColors.warning,
@@ -294,8 +290,8 @@ class _BackupRedundancyContent extends StatelessWidget {
                       SortableDataColumn<_BackupRedundancyIssue>(
                         label: 'location count',
                         numeric: true,
-                        compare: (left, right) => left.backupLocations.length
-                            .compareTo(right.backupLocations.length),
+                        compare: (left, right) => left.currentLocationCount
+                            .compareTo(right.currentLocationCount),
                       ),
                       SortableDataColumn<_BackupRedundancyIssue>(
                         label: 'locations',
@@ -338,9 +334,7 @@ class _BackupRedundancyContent extends StatelessWidget {
                           DataCell(Text('${issue.guestType}/${issue.vmid}')),
                           DataCell(Text(issue.name)),
                           DataCell(StatusChip(status: issue.guestStatus)),
-                          DataCell(
-                            Text(issue.backupLocations.length.toString()),
-                          ),
+                          DataCell(Text(issue.currentLocationCount.toString())),
                           DataCell(Text(issue.backupLocations.join(', '))),
                           DataCell(Text(issue.snapshotCount.toString())),
                           DataCell(Text(_formatDateTime(issue.latestBackupAt))),
@@ -372,8 +366,8 @@ class _RedundancyInfoCard extends StatelessWidget {
             child: Text(
               'Безопасное хранение требует минимум 2 разных места хранения: '
               'разные PBS или разные datastore внутри одного PBS. Если backup '
-              'есть только в одном месте, потеря этого хранилища оставит '
-              'VM/LXC без независимой копии.',
+              'есть только в одном месте или второе место содержит backup за '
+              'другую дату, VM/LXC не имеет актуальной независимой копии.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: AppColors.mutedInk),
@@ -412,6 +406,7 @@ class _BackupRedundancyIssue {
     required this.name,
     required this.guestStatus,
     required this.backupSources,
+    required this.currentLocationCount,
     required this.backupLocations,
     required this.snapshotCount,
     required this.latestBackupAt,
@@ -425,11 +420,12 @@ class _BackupRedundancyIssue {
   final String name;
   final String guestStatus;
   final Set<String> backupSources;
+  final int currentLocationCount;
   final Set<String> backupLocations;
   final int snapshotCount;
   final DateTime? latestBackupAt;
 
-  String get status => backupLocations.length >= 2 ? 'ok' : 'critical';
+  String get status => currentLocationCount >= 2 ? 'ok' : 'critical';
 }
 
 bool _isGuest(Map<String, Object?> item) {

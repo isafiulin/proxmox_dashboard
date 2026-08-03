@@ -3,7 +3,7 @@ services:
     build:
       context: ./frontend
       args:
-        FRONTEND_VERSION: ${FRONTEND_VERSION:-1.2.2+11}
+        FRONTEND_VERSION: ${FRONTEND_VERSION:-1.2.3+12}
     depends_on:
       - backend
     ports:
@@ -17,8 +17,8 @@ services:
       - ./deploy/.env
     environment:
       STORE_DRIVER: postgres
-      BACKEND_VERSION: ${BACKEND_VERSION:-0.3.7}
-      FRONTEND_VERSION: ${FRONTEND_VERSION:-1.2.2+11}
+      BACKEND_VERSION: ${BACKEND_VERSION:-0.3.8}
+      FRONTEND_VERSION: ${FRONTEND_VERSION:-1.2.3+12}
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
     depends_on:
       - postgres
