@@ -80,6 +80,7 @@ class BackupRedundancyPage extends StatelessWidget {
     }
 
     final issues = <_BackupRedundancyIssue>[];
+    final inventory = <_BackupInventoryItem>[];
     var totalGuests = 0;
     final pveData = await Future.wait(
       pveSources.map((source) => repository.loadProxmoxVe(source.id)),
@@ -112,6 +113,26 @@ class BackupRedundancyPage extends StatelessWidget {
             .toSet();
         final locationFreshness = analyzePbsBackupLocationFreshness(
           guestSnapshots,
+        );
+        inventory.add(
+          _BackupInventoryItem(
+            sourceId: source.id,
+            sourceName: source.name,
+            node: guest['node']?.toString() ?? '',
+            guestType: guestType,
+            vmid: vmid,
+            name: guest['name']?.toString() ?? '',
+            guestStatus: guest['status']?.toString() ?? 'unknown',
+            backupStatus: backupStatusLabel(summary.status),
+            copies: guestSnapshots
+                .map(
+                  (snapshot) => _BackupCopy(
+                    createdAt: snapshotTime(snapshot),
+                    location: _backupLocation(snapshot),
+                  ),
+                )
+                .toList(growable: false),
+          ),
         );
         final backupLocationLabels = locationFreshness.latestByLocation.values
             .map((snapshot) {
@@ -162,9 +183,22 @@ class BackupRedundancyPage extends StatelessWidget {
         b.latestBackupAt ?? DateTime(0),
       );
     });
+    inventory.sort((a, b) {
+      final sourceCompare = a.sourceName.compareTo(b.sourceName);
+      if (sourceCompare != 0) {
+        return sourceCompare;
+      }
+      final leftId = int.tryParse(a.vmid);
+      final rightId = int.tryParse(b.vmid);
+      if (leftId != null && rightId != null) {
+        return leftId.compareTo(rightId);
+      }
+      return a.vmid.compareTo(b.vmid);
+    });
 
     return _BackupRedundancyReport(
       issues: issues,
+      inventory: inventory,
       totalGuests: totalGuests,
       pbsSources: pbsSources.length,
     );
@@ -346,6 +380,116 @@ class _BackupRedundancyContent extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Все VM/LXC и их backup-копии',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Полный реестр: сколько копий найдено, даты создания и точные места хранения.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppColors.mutedInk),
+              ),
+              const SizedBox(height: 12),
+              if (report.inventory.isEmpty)
+                const EmptyState(
+                  icon: Icons.dns_outlined,
+                  text: 'VM/LXC не найдены.',
+                )
+              else
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTableTheme(
+                    data: DataTableTheme.of(
+                      context,
+                    ).copyWith(dataRowMaxHeight: double.infinity),
+                    child: SortableDataTable<_BackupInventoryItem>(
+                      showCheckboxColumn: false,
+                      items: report.inventory,
+                      columns: <SortableDataColumn<_BackupInventoryItem>>[
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'backup status',
+                          compare: (left, right) => compareText(
+                            left.backupStatus,
+                            right.backupStatus,
+                          ),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'source',
+                          compare: (left, right) =>
+                              compareText(left.sourceName, right.sourceName),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'node',
+                          compare: (left, right) =>
+                              compareText(left.node, right.node),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'vm/lxc',
+                          compare: (left, right) => compareText(
+                            '${left.guestType}/${left.vmid}',
+                            '${right.guestType}/${right.vmid}',
+                          ),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'name',
+                          compare: (left, right) =>
+                              compareText(left.name, right.name),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'vm status',
+                          compare: (left, right) =>
+                              compareText(left.guestStatus, right.guestStatus),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'copies',
+                          numeric: true,
+                          compare: (left, right) =>
+                              left.copies.length.compareTo(right.copies.length),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'copy dates',
+                          compare: (left, right) => compareNullableDateTime(
+                            left.latestBackupAt,
+                            right.latestBackupAt,
+                          ),
+                        ),
+                        SortableDataColumn<_BackupInventoryItem>(
+                          label: 'storage locations',
+                          compare: (left, right) => compareText(
+                            left.locationText,
+                            right.locationText,
+                          ),
+                        ),
+                      ],
+                      rowBuilder: (context, item) {
+                        return DataRow(
+                          onSelectChanged: (_) => context.go(item.detailPath),
+                          cells: <DataCell>[
+                            DataCell(StatusChip(status: item.backupStatus)),
+                            DataCell(Text(item.sourceName)),
+                            DataCell(Text(item.node)),
+                            DataCell(Text('${item.guestType}/${item.vmid}')),
+                            DataCell(Text(item.name)),
+                            DataCell(StatusChip(status: item.guestStatus)),
+                            DataCell(Text(item.copies.length.toString())),
+                            DataCell(Text(item.dateText)),
+                            DataCell(Text(item.locationText)),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -382,18 +526,69 @@ class _RedundancyInfoCard extends StatelessWidget {
 class _BackupRedundancyReport {
   const _BackupRedundancyReport({
     required this.issues,
+    required this.inventory,
     required this.totalGuests,
     required this.pbsSources,
   });
 
   const _BackupRedundancyReport.empty()
     : issues = const <_BackupRedundancyIssue>[],
+      inventory = const <_BackupInventoryItem>[],
       totalGuests = 0,
       pbsSources = 0;
 
   final List<_BackupRedundancyIssue> issues;
+  final List<_BackupInventoryItem> inventory;
   final int totalGuests;
   final int pbsSources;
+}
+
+class _BackupInventoryItem {
+  const _BackupInventoryItem({
+    required this.sourceId,
+    required this.sourceName,
+    required this.node,
+    required this.guestType,
+    required this.vmid,
+    required this.name,
+    required this.guestStatus,
+    required this.backupStatus,
+    required this.copies,
+  });
+
+  final String sourceId;
+  final String sourceName;
+  final String node;
+  final String guestType;
+  final String vmid;
+  final String name;
+  final String guestStatus;
+  final String backupStatus;
+  final List<_BackupCopy> copies;
+
+  DateTime? get latestBackupAt =>
+      copies.isEmpty ? null : copies.first.createdAt;
+
+  String get dateText => copies.isEmpty
+      ? 'не найдено'
+      : copies.map((copy) => _formatDateTime(copy.createdAt)).join('\n');
+
+  String get locationText => copies.isEmpty
+      ? 'не найдено'
+      : copies.map((copy) => copy.location).join('\n');
+
+  String get detailPath {
+    final query = name.isEmpty ? '' : '?name=${Uri.encodeQueryComponent(name)}';
+    return '/sources/$sourceId/guests/$guestType/'
+        '${Uri.encodeComponent(node)}/$vmid$query';
+  }
+}
+
+class _BackupCopy {
+  const _BackupCopy({required this.createdAt, required this.location});
+
+  final DateTime createdAt;
+  final String location;
 }
 
 class _BackupRedundancyIssue {
@@ -440,4 +635,16 @@ String _formatDateTime(DateTime? value) {
   String two(int value) => value.toString().padLeft(2, '0');
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
+}
+
+String _backupLocation(Map<String, Object?> snapshot) {
+  final source = snapshot['backupSource']?.toString() ?? '';
+  final datastore = snapshot['datastore']?.toString() ?? '';
+  final namespace = snapshotNamespace(snapshot);
+  final parts = <String>[
+    source,
+    datastore,
+    namespace,
+  ].where((part) => part.isNotEmpty).toList(growable: false);
+  return parts.isEmpty ? 'неизвестно' : parts.join(' / ');
 }
