@@ -136,7 +136,7 @@ cp deploy/.env.example deploy/.env
 export GIT_COMMIT="$(git rev-parse --short HEAD)"
 docker compose --env-file deploy/.env build
 docker compose --env-file deploy/.env up -d
-curl -fsS http://127.0.0.1/api/health
+curl -fsS http://127.0.0.1:8081/api/health
 ```
 
 Обновление:
@@ -233,7 +233,8 @@ Flutter при локальном запуске обращается к backend
   credentials перестанут расшифровываться.
 - Backend не должен публиковаться напрямую; наружу отдаётся только frontend
   reverse proxy.
-- Compose слушает HTTP `:80`. TLS завершается внешним Caddy/Nginx/LB.
+- Compose публикует frontend только на `127.0.0.1:8081`. TLS завершается
+  внешним Caddy/Nginx/LB.
 - `ALLOW_INSECURE_TLS=true` разрешает self-signed сертификаты и подходит только
   для доверенной management-сети.
 - Текущая роль одна — `admin`; все вошедшие пользователи имеют полный доступ к

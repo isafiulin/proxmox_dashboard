@@ -1,7 +1,8 @@
 # Deployment and operations
 
 Production topology: один Linux-сервер с Docker Compose. Контейнер `frontend`
-публикует порт 80, проксирует `/api/` в `backend`; backend и PostgreSQL наружу
+публикуется только на `127.0.0.1:8081` и проксирует `/api/` в `backend`;
+инфраструктурный reverse proxy публикует HTTPS, а backend и PostgreSQL наружу
 не публикуются.
 
 ## 1. Требования
@@ -51,7 +52,7 @@ export GIT_COMMIT="$(git rev-parse --short HEAD)"
 docker compose --env-file deploy/.env build
 docker compose --env-file deploy/.env up -d
 docker compose --env-file deploy/.env ps
-curl -fsS http://127.0.0.1/api/health
+curl -fsS http://127.0.0.1:8081/api/health
 ```
 
 Посмотреть запуск и ошибки:
@@ -66,8 +67,9 @@ docker compose --env-file deploy/.env logs --tail=100 frontend postgres
 
 ## 4. HTTPS
 
-Встроенный Nginx слушает HTTP `:80`. В production завершайте TLS на внешнем
-reverse proxy или load balancer и проксируйте весь origin в `frontend:80`.
+Встроенный Nginx слушает HTTP `:80` внутри контейнера и публикуется на host как
+`127.0.0.1:8081`. В production завершайте TLS на внешнем reverse proxy или
+load balancer и проксируйте весь origin в `127.0.0.1:8081`.
 Важно передавать `Host`, `X-Forwarded-For` и `X-Forwarded-Proto`.
 
 Если сервис доступен только через внутренний VPN/management LAN, всё равно
@@ -84,7 +86,7 @@ export GIT_COMMIT="$(git rev-parse --short HEAD)"
 docker compose --env-file deploy/.env build
 docker compose --env-file deploy/.env up -d
 docker compose --env-file deploy/.env ps
-curl -fsS http://127.0.0.1/api/health
+curl -fsS http://127.0.0.1:8081/api/health
 ```
 
 `docker compose up -d` пересоздаёт только изменившиеся контейнеры. PostgreSQL
@@ -147,7 +149,7 @@ docker compose --env-file deploy/.env ps
 docker compose --env-file deploy/.env logs --since=30m backend
 docker compose --env-file deploy/.env exec postgres \
   pg_isready -U neotelecom -d neotelecom
-curl -i http://127.0.0.1/api/health
+curl -i http://127.0.0.1:8081/api/health
 docker stats --no-stream
 ```
 
